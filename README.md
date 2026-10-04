@@ -12,6 +12,8 @@ Setup finds your games by itself: every Steam library, GOG, a disc install, or a
 
 To uninstall, double-click `Uninstall.bat` (in the download or in either game's VR folder): it removes everything Setup added and keeps your pilots and saves. If something goes wrong, `Collect logs.bat` puts the logs in one zip on your desktop to send us.
 
+<img src="docs/playing-in-vr.png" width="100%" alt="Playing Descent 1 &amp; 2 VR on stream">
+
 <img src="docs/screenshot-1.png" width="49%" alt="Flying a mine in VR"> <img src="docs/screenshot-2.png" width="49%" alt="A fight with the missile view open">
 
 ## What you get
