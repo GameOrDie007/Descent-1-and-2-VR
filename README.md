@@ -2,6 +2,8 @@
 
 Descent and Descent 2 in your PC VR headset, built on [DXX-Redux](https://github.com/dxx-redux/dxx-redux), with your own copy of the games. A Game Or Die VR port.
 
+**Watch the install and gameplay video:** [I Put Descent in VR and It's Wild](https://youtu.be/8ny_fpmIa_A)
+
 ## Install
 
 1. Download `Descent-1-and-2-VR-1.0-PCVR.zip` from [Releases](../../releases) and unzip it anywhere.
@@ -12,7 +14,7 @@ Setup finds your games by itself: every Steam library, GOG, a disc install, or a
 
 To uninstall, double-click `Uninstall.bat` (in the download or in either game's VR folder): it removes everything Setup added and keeps your pilots and saves. If something goes wrong, `Collect logs.bat` puts the logs in one zip on your desktop to send us.
 
-<img src="docs/playing-in-vr.png" width="100%" alt="Playing Descent 2 in VR on stream">
+<a href="https://youtu.be/8ny_fpmIa_A"><img src="docs/playing-in-vr.png" width="100%" alt="Playing Descent 2 in VR on stream"></a>
 
 <img src="docs/screenshot-1.png" width="49%" alt="Descent in VR"> <img src="docs/screenshot-2.png" width="49%" alt="Descent 2 in VR, with the missile view open">
 
@@ -80,3 +82,7 @@ Descent and Descent 2 by Parallax Software. The engine is [DXX-Redux](https://gi
 The engine and our changes to it are under the Parallax license and the D1X-Rebirth license (`COPYING.txt`, and `d2/COPYING.txt` for Descent 2): non-commercial use only, never sold, and the source of any modified version freely and publicly available. You need your own copy of the games.
 
 Game Or Die's own files (the GameOrDieXR library, the splash art and the installer) are all rights reserved: they may be shared only unmodified, as part of the Descent 1 & 2 VR release, and may not be modified, decompiled or used in other projects (see `LICENSE-GameOrDie.txt` in the release). The Game Or Die name and logo are not licensed: a copy or a changed version of this port must not present itself as Game Or Die's.
+
+---
+
+**Get an email when the next port ships:** follow [Game Or Die on Patreon](https://www.patreon.com/cw/GameOrDie) for free. Ports are never paywalled.
