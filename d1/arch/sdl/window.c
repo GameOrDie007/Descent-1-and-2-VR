@@ -27,6 +27,19 @@ struct window
 static window *FrontWindow = NULL;
 static window *FirstWindow = NULL;
 
+#ifdef USE_VR
+// Whose window this is: the VR controllers need to tell a menu from the game.
+int window_has_handler(window *wind, int (*event_callback)(window *wind, d_event *event, void *data))
+{
+	return wind && wind->w_callback == event_callback;
+}
+
+void *window_get_data(window *wind)
+{
+	return wind ? wind->data : NULL;
+}
+#endif
+
 window *window_create(grs_canvas *src, int x, int y, int w, int h, int (*event_callback)(window *wind, d_event *event, void *data), void *data)
 {
 	window *wind;

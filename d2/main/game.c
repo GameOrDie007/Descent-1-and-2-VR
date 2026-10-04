@@ -60,6 +60,9 @@ COPYRIGHT 1993-1999 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "weapon.h"
 #include "sounds.h"
 #include "args.h"
+#ifdef USE_VR
+#include "vr_descent.h"
+#endif
 #include "gameseq.h"
 #include "automap.h"
 #include "text.h"
@@ -400,7 +403,11 @@ void calc_frame_time()
 	timer_value = timer_query();
 	FrameTime = timer_value - last_timer_value;
 
-	while (FrameTime < f1_0 / (GameCfg.VSync?MAXIMUM_FPS:PlayerCfg.maxFps))
+	while (FrameTime < f1_0 / (GameCfg.VSync?MAXIMUM_FPS:PlayerCfg.maxFps)
+#ifdef USE_VR
+		&& !vrd_paced()	// xrWaitFrame paces; a second cap only drops frames
+#endif
+		)
 	{
 		if (GameArg.SysUseNiceFPS && !GameCfg.VSync)
 			timer_delay(f1_0 / PlayerCfg.maxFps - FrameTime);
@@ -1160,12 +1167,17 @@ int game_handler(window *wind, d_event *event, void *data)
 			return ReadControls(event);
 
 		case EVENT_WINDOW_DRAW:
+#ifdef USE_VR
+			if (!vrd_repeat_eye())	// the second eye sees the same moment
+#endif
+			{
 			calc_frame_time();
 
 			if (!time_paused)
 			{
 				calc_game_time();
 				GameProcessFrame();
+			}
 			}
 
 			if (!Automap_active)		// efficiency hack

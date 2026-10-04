@@ -11,6 +11,9 @@
 #include "key.h"
 #include "mouse.h"
 #include "window.h"
+#ifdef USE_VR
+#include "vr_descent.h"
+#endif
 #include "timer.h"
 #include "config.h"
 #include "args.h"
@@ -155,27 +158,42 @@ void event_send(d_event *event)
 // Process the first event in queue, sending to the appropriate handler
 // This is the new object-oriented system
 // Uses the old system for now, but this may change
-void event_process(void)
+#define DRAW_ALL		0
+#define DRAW_GAME		1	// only the game's own window (the view, in the eyes)
+#define DRAW_ABOVE_GAME	2	// only the windows over it (menus, on the panel)
+
+static void draw_windows(int which)
 {
 	d_event event;
-	window *wind = window_get_front();
+	window *wind;
+	int above_game = 0;
 
-	timer_update();
-
-	event_poll();	// send input events first
-
-	// Doing this prevents problems when a draw event can create a newmenu,
-	// such as some network menus when they report a problem
-	if (window_get_front() != wind)
-		return;
-	
 	event.type = EVENT_WINDOW_DRAW;	// then draw all visible windows
 	wind = window_get_first();
 	while (wind != NULL)
 	{
 		window *prev = window_get_prev(wind);
-		if (window_is_visible(wind))
+		int send = 1;
+#ifdef USE_VR
+		if (which != DRAW_ALL)
+		{
+			const int is_game = vrd_is_game_window(wind);
+			send = which == DRAW_GAME ? is_game : above_game;
+			if (is_game)
+				above_game = 1;
+		}
+#endif
+		if (send && window_is_visible(wind))
+		{
+#ifdef USE_VR
+			vrd_window_draw_begin(wind);	// on the panel: monitor-sized windows scale up
+#endif
 			window_send_event(wind, &event);
+#ifdef USE_VR
+			if (window_exists(wind))
+				vrd_window_draw_end(wind);
+#endif
+		}
 		if (!window_exists(wind))
 		{
 			if (!prev) // well there isn't a previous window ...
@@ -185,6 +203,79 @@ void event_process(void)
 		else
 			wind = window_get_next(wind);
 	}
+}
+
+void event_process(void)
+{
+	window *wind = window_get_front();
+
+	timer_update();
+
+	event_poll();	// send input events first
+#ifdef USE_VR
+	vrd_input_frame();	// the VR controllers, as control states and keys
+#endif
+
+	// Doing this prevents problems when a draw event can create a newmenu,
+	// such as some network menus when they report a problem
+	if (window_get_front() != wind)
+		return;
+	
+#ifdef USE_VR
+	// In the headset the game's view is drawn once per eye (the game moves on
+	// the first eye only, game.c) and everything flat goes on the panel: the
+	// windows over the game, or else the HUD.  Every frame begun is ended.
+	vrd_frame_begin();
+	switch (vrd_frame_kind())
+	{
+		case VRD_EYES:
+		{
+			int eye, drawn = 0;
+			for (eye = 0; eye < 2; eye++)
+				if (vrd_eye_begin(eye))
+				{
+					draw_windows(DRAW_GAME);
+					vrd_eye_end(eye);
+					drawn++;
+				}
+			if (!drawn)
+				draw_windows(DRAW_GAME);	// no eye this frame: the game still moves
+			if (vrd_menu_above_game())
+			{
+				if (vrd_panel_begin(VRD_PANEL_MENU))
+				{
+					draw_windows(DRAW_ABOVE_GAME);
+					vrd_panel_overlay();
+					vrd_panel_end();
+				}
+				else
+					draw_windows(DRAW_ABOVE_GAME);
+			}
+			else if (vrd_panel_begin(VRD_PANEL_HUD))
+			{
+				vrd_draw_hud();
+				vrd_panel_end();
+			}
+			break;
+		}
+		case VRD_PANEL:
+			if (vrd_panel_begin(VRD_PANEL_MENU))
+			{
+				draw_windows(DRAW_ALL);
+				vrd_panel_overlay();
+				vrd_panel_end();
+			}
+			else
+				draw_windows(DRAW_ALL);
+			break;
+		default:
+			draw_windows(DRAW_ALL);
+			break;
+	}
+	vrd_frame_end();
+#else
+	draw_windows(DRAW_ALL);
+#endif
 
 	gr_flip();
 }

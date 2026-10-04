@@ -17,6 +17,7 @@ option(UDP "Enable UDP support [default: ON]" ON)
 option(TRACKER "Enable Tracker support (requires UDP) [default: ON]" ON)
 option(PNG "Build with PNG support for screenshots and textures [default: ON]" ON)
 option(OPENGLMERGE "Use an OpenGL shader for texmerge [default: ON]" ON)
+option(VR "Build with VR headset support over OpenXR (requires OpenGL) [default: ON]" ON)
 
 set(CMAKE_C_FLAGS_MINSIZEREL "${CMAKE_C_FLAGS_MINSIZEREL} -DRELEASE")
 set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -DRELEASE")
@@ -72,6 +73,14 @@ if(PNG)
 endif()
 if(OPENGLMERGE)
     add_definitions(/DOGL_MERGE)
+endif()
+
+if(VR)
+    if(NOT OPENGL)
+        message(FATAL_ERROR "VR needs OPENGL=ON")
+    endif()
+    add_definitions(/DUSE_VR /DVRD_DESCENT2)
+    include_directories(${PROJECT_SOURCE_DIR}/../vr)	# vr_descent.h, for every library
 endif()
 
 if(WIN32)

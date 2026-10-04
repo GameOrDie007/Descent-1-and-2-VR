@@ -33,6 +33,9 @@ COPYRIGHT 1993-1999 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "controls.h"
 #include "render.h"
 #include "args.h"
+#ifdef USE_VR
+#include "vr_descent.h"
+#endif
 #include "palette.h"
 #include "mouse.h"
 #include "kconfig.h"
@@ -181,7 +184,11 @@ void read_flying_controls( object * obj )
 	// slide up/down
 	vm_vec_scale_add2(&obj->mtype.phys_info.thrust,&obj->orient.uvec, Controls.vertical_thrust_time );
 
-	if (!is_observer() && obj->mtype.phys_info.flags & PF_WIGGLE)
+	if (!is_observer() && obj->mtype.phys_info.flags & PF_WIGGLE
+#ifdef USE_VR
+	    && vrd_ship_bob()	// VR Options, Hands and Aim: Ship bob
+#endif
+	    )
 	{
 		fix swiggle;
 		fix_fastsincos(((fix)GameTime64), &swiggle, NULL);

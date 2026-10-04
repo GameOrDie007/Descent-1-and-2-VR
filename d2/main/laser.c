@@ -40,6 +40,14 @@ COPYRIGHT 1993-1999 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "polyobj.h"
 #include "robot.h"
 #include "weapon.h"
+#ifdef USE_VR
+#include "vr_descent.h"
+#endif
+#ifdef USE_VR
+#define VRD_SHOT(v) vrd_shot_dir(v)	// the controller's aim, when chosen
+#else
+#define VRD_SHOT(v) (v)
+#endif
 #include "newdemo.h"
 #include "timer.h"
 #include "player.h"
@@ -1257,6 +1265,17 @@ void Laser_player_fire_spread_delay(object *obj, int laser_type, int gun_num, fi
 
 	create_awareness_event(obj, PA_WEAPON_WALL_COLLISION);
 
+#ifdef USE_VR
+	if (obj == ConsoleObject)
+	{
+		// Every projectile the player's ship fires: the controllers feel it.
+		int i, secondary = 0;
+		for (i = 0; i < MAX_SECONDARY_WEAPONS; i++)
+			if (Secondary_weapon_to_weapon_info[i] == laser_type)
+				secondary = 1;
+		vrd_on_fire(Weapon_info[laser_type].strength[Difficulty_level], secondary);
+	}
+#endif
 	// Find the initial position of the laser
 	pnt = &Player_ship->gun_points[gun_num];
 
@@ -1412,7 +1431,7 @@ void Flare_create(object *obj)
 			// -- auto_select_weapon(0);
 		}
 
-		Laser_player_fire( obj, FLARE_ID, 6, 1, 0, Objects[Players[Player_num].objnum].orient.fvec); /* CED sniperpackets */
+		Laser_player_fire( obj, FLARE_ID, 6, 1, 0, VRD_SHOT(Objects[Players[Player_num].objnum].orient.fvec)); /* CED sniperpackets */
 
 		#ifdef NETWORK
 		if (Game_mode & GM_MULTI)
@@ -1708,7 +1727,7 @@ void do_laser_firing_player(void)
 			if (Players[Player_num].flags & PLAYER_FLAGS_QUAD_LASERS)
 				flags |= LASER_QUAD;
 
-			rval += do_laser_firing(Players[Player_num].objnum, Players[Player_num].primary_weapon, laser_level, flags, nfires, Objects[Players[Player_num].objnum].orient.fvec);
+			rval += do_laser_firing(Players[Player_num].objnum, Players[Player_num].primary_weapon, laser_level, flags, nfires, VRD_SHOT(Objects[Players[Player_num].objnum].orient.fvec));
 
 			int warning_increment = 250/12;
 			int pre_ammo = plp->primary_ammo[VULCAN_INDEX];
@@ -2150,7 +2169,8 @@ void do_missile_firing(int drop_bomb)
 		return;
 	}
 
-	vms_vector orient = Objects[Players[Player_num].objnum].orient.fvec;
+	// A dropped bomb goes out behind the ship, whatever the aim.
+	vms_vector orient = drop_bomb ? Objects[Players[Player_num].objnum].orient.fvec : VRD_SHOT(Objects[Players[Player_num].objnum].orient.fvec);
 
 	if (!Player_is_dead && (Players[Player_num].secondary_ammo[weapon] > 0))	{
 

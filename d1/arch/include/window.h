@@ -32,6 +32,10 @@ extern void window_update_canvases(void);
 extern int window_send_event(window *wind, d_event *event);
 extern void window_set_modal(window *wind, int modal);
 extern int window_is_modal(window *wind);
+#ifdef USE_VR
+extern int window_has_handler(window *wind, int (*event_callback)(window *wind, d_event *event, void *data));
+extern void *window_get_data(window *wind);
+#endif
 
 #define WINDOW_SEND_EVENT(w, e)	\
 do {	\

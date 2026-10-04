@@ -60,6 +60,12 @@ typedef struct newmenu_item {
 // Title draws big, Subtitle draw medium sized.  You can pass NULL for
 // either/both of these if you don't want them.
 extern int newmenu_do(char * title, char * subtitle, int nitems, newmenu_item *item, int (*subfunction)(newmenu *menu, d_event *event, void *userdata), void *userdata);
+#ifdef USE_VR
+extern int newmenu_front_item_is_toggle(void);
+extern int newmenu_front_item_is_text(void);
+extern int newmenu_front_text_wants_keyboard(void);
+extern int newmenu_window_lays_itself_out(struct window *wind);
+#endif
 
 // Same as above, only you can pass through what item is initially selected.
 extern int newmenu_do1(char *title, char *subtitle, int nitems, newmenu_item *item, int (*subfunction)(newmenu *menu, d_event *event, void *userdata), void *userdata, int citem);

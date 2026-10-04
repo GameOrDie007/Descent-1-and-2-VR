@@ -46,5 +46,9 @@ extern void mouse_get_delta( int *dx, int *dy, int *dz );
 extern void event_mouse_get_delta(struct d_event *event, int *dx, int *dy, int *dz);
 extern int mouse_get_btns();
 extern void mouse_toggle_cursor(int activate);
+#ifdef USE_VR
+extern void mouse_inject_pos(int x, int y);
+extern void mouse_inject_button(int down);
+#endif
 
 #endif

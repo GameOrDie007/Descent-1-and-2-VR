@@ -147,6 +147,39 @@ void mouse_motion_handler(SDL_MouseMotionEvent *mme)
 	event_send((d_event *)&event);
 }
 
+#ifdef USE_VR
+/* The VR menu pointer: the mouse goes where the controller points, in the
+   panel's pixels (where VR lays the menus out), and the left button is
+   pressed and released there: the same state and events a mouse gives. */
+void mouse_inject_pos(int x, int y)
+{
+	d_event_mouse_moved event;
+	const int dx = x - Mouse.x, dy = y - Mouse.y;
+
+	if (!dx && !dy)
+		return;
+	Mouse.x = x;
+	Mouse.y = y;
+	Mouse.cursor_time = timer_query();
+	event.type = EVENT_MOUSE_MOVED;
+	event.dx = dx;
+	event.dy = dy;
+	event.dz = 0;
+	event_send((d_event *)&event);
+}
+
+void mouse_inject_button(int down)
+{
+	d_event_mousebutton event;
+
+	Mouse.button_state[MBTN_LEFT] = down ? 1 : 0;
+	Mouse.cursor_time = timer_query();
+	event.type = down ? EVENT_MOUSE_BUTTON_DOWN : EVENT_MOUSE_BUTTON_UP;
+	event.button = MBTN_LEFT;
+	event_send((d_event *)&event);
+}
+#endif
+
 void mouse_flush()	// clears all mice events...
 {
 	int i;

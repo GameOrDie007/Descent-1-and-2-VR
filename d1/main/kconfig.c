@@ -47,6 +47,9 @@ COPYRIGHT 1993-1998 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "menu.h"
 #include "automap.h"
 #include "args.h"
+#ifdef USE_VR
+#include "vr_descent.h"
+#endif
 #include "lighting.h"
 #include "ai.h"
 #include "cntrlcen.h"
@@ -859,7 +862,11 @@ int kconfig_handler(window *wind, d_event *event, kc_menu *menu)
 			break;
 			
 		case EVENT_WINDOW_DRAW:
-			if (menu->changing)
+			if (menu->changing
+#ifdef USE_VR
+				&& !vrd_paced()	// the headset paces the frames
+#endif
+				)
 				timer_delay(f0_1/10);
 			else
 				timer_delay2(50);
@@ -1693,6 +1700,10 @@ void kconfig_read_controls(d_event *event, int automap_flag)
 		else
 			Controls.forward_thrust_time += (Controls.mouse_axis[kc_mouse[23].value]*PlayerCfg.MouseSens[5])/8;
 	}
+
+#ifdef USE_VR
+	vrd_add_axes(speed_factor);	// the VR controllers' sticks and grips
+#endif
 
 	//----------- Read cruise-control-type of throttle.
 	// For LoNi -- have cruise go to 100% instantly.  Will add option if anyone cares about making it slow.

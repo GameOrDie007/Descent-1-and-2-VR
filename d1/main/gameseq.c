@@ -64,6 +64,9 @@ COPYRIGHT 1993-1998 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "weapon.h"
 #include "sounds.h"
 #include "args.h"
+#ifdef USE_VR
+#include "vr_descent.h"
+#endif
 #include "gameseq.h"
 #include "gamefont.h"
 #include "newmenu.h"
@@ -654,6 +657,9 @@ void LoadLevel(int level_num,int page_in_textures)
 
 	show_boxed_message(TXT_LOADING, 0);
 #ifdef RELEASE
+#ifdef USE_VR
+	if (!vrd_enabled())	// in the headset a second with no frames is a frozen view, not a pause
+#endif
 	timer_delay(F1_0);
 #endif
 
@@ -1291,10 +1297,18 @@ void StartNewLevel(int level_num)
 	GameTime64 = 0;
 	ThisLevelTime=0;
 
-	if (!(Game_mode & GM_MULTI)) {
+	if (!(Game_mode & GM_MULTI)
+#ifdef USE_VR
+		&& !vrd_skip_briefing()	// -startlevel goes straight in
+#endif
+		) {
 		do_briefing_screens(Briefing_text_filename, level_num);
 	}
 	StartNewLevelSub(level_num, 1, 0 );
+#ifdef USE_VR
+	if (GameArg.VrKit && !(Game_mode & GM_MULTI))
+		vrd_give_test_kit();
+#endif
 
 }
 

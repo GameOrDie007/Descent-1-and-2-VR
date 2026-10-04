@@ -20,6 +20,9 @@ COPYRIGHT 1993-1998 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "3d.h"
 #include "globvars.h"
 #include "fix.h"
+#ifdef USE_VR
+int vrd_in_eye_pass(void);	// vr_descent.c: drawing into an eye
+#endif
 
 grs_point blob_vertices[4];
 g3s_point rod_points[4];
@@ -67,6 +70,40 @@ int calc_rod_corners(g3s_point *bot_point,fix bot_width,g3s_point *top_point,fix
 	rod_norm.x = fixmul(rod_norm.x,Matrix_scale.x);
 	rod_norm.y = fixmul(rod_norm.y,Matrix_scale.y);
 
+#ifdef USE_VR
+	// In the headset the camera is the head: an edge kept flat to it (z = 0
+	// below) swivels and tilts with every look.  Work in true geometry
+	// instead: the edge at right angles to
+	// the rod and to the line from the eye, so the rod turns to face the eye
+	// around its own axis and nothing else.
+	if (vrd_in_eye_pass())
+	{
+		vms_vector axis, to_eye;
+		vm_vec_sub(&axis,&bot_point->p3_vec,&top_point->p3_vec);
+		axis.x = fixdiv(axis.x,Matrix_scale.x);
+		axis.y = fixdiv(axis.y,Matrix_scale.y);
+		axis.z = fixdiv(axis.z,Matrix_scale.z);
+		vm_vec_normalize(&axis);
+		to_eye.x = fixdiv(top_point->p3_vec.x,Matrix_scale.x);
+		to_eye.y = fixdiv(top_point->p3_vec.y,Matrix_scale.y);
+		to_eye.z = fixdiv(top_point->p3_vec.z,Matrix_scale.z);
+		vm_vec_normalize(&to_eye);
+		vm_vec_cross(&rod_norm,&axis,&to_eye);
+		vm_vec_normalize(&rod_norm);
+		rod_norm.x = fixmul(rod_norm.x,Matrix_scale.x);
+		rod_norm.y = fixmul(rod_norm.y,Matrix_scale.y);
+		rod_norm.z = fixmul(rod_norm.z,Matrix_scale.z);
+
+		vm_vec_copy_scale(&tempv,&rod_norm,top_width);
+		vm_vec_add(&rod_points[0].p3_vec,&top_point->p3_vec,&tempv);
+		vm_vec_sub(&rod_points[1].p3_vec,&top_point->p3_vec,&tempv);
+		vm_vec_copy_scale(&tempv,&rod_norm,bot_width);
+		vm_vec_sub(&rod_points[2].p3_vec,&bot_point->p3_vec,&tempv);
+		vm_vec_add(&rod_points[3].p3_vec,&bot_point->p3_vec,&tempv);
+		goto code_points;
+	}
+#endif
+
 	//now we have the usable edge.  generate four points
 
 	//top points
@@ -84,6 +121,9 @@ int calc_rod_corners(g3s_point *bot_point,fix bot_width,g3s_point *top_point,fix
 	vm_vec_add(&rod_points[3].p3_vec,&bot_point->p3_vec,&tempv);
 
 
+#ifdef USE_VR
+code_points:
+#endif
 	//now code the four points
 
 	for (i=0,codes_and=0xff;i<4;i++)

@@ -13,6 +13,7 @@ typedef struct{
 
 int  MVE_rmPrepMovie(void *stream, int x, int y, int track);
 int  MVE_rmStepMovie();
+int  MVE_rmFrameDue(void);
 void MVE_rmHoldMovie();
 void MVE_rmEndMovie();
 

@@ -428,6 +428,44 @@ void key_handler(SDL_KeyboardEvent *kevent)
 	}
 }
 
+#ifdef USE_VR
+/* A key pressed by the VR controllers: the same state and event a real
+   key gives, with no modifiers. */
+/* A character typed on the VR keyboard: into the frame's character buffer
+   as a real key would put it, then a carrier key so the menu reads it.
+   The carrier is one the menus do not act on themselves. */
+void key_inject_char(int ch)
+{
+	int i;
+
+	for (i = 0; i < KEY_BUFFER_SIZE; i++)
+		if (unicode_frame_buffer[i] == '\0')
+		{
+			unicode_frame_buffer[i] = (unsigned char)ch;
+			break;
+		}
+	key_inject(KEY_LBRACKET, 1);
+	key_inject(KEY_LBRACKET, 0);
+}
+
+void key_inject(int keycode, int down)
+{
+	d_event_keycommand event;
+
+	if (keycode <= 0 || keycode > 255)
+		return;
+	if (down) {
+		keyd_last_pressed = keycode;
+		keyd_pressed[keycode] = key_data.state[keycode] = 1;
+	} else {
+		keyd_pressed[keycode] = key_data.state[keycode] = 0;
+	}
+	event.type = down ? EVENT_KEY_COMMAND : EVENT_KEY_RELEASE;
+	event.keycode = keycode;
+	event_send((d_event *)&event);
+}
+#endif
+
 void key_close()
 {
       Installed = 0;

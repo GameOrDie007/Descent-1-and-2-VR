@@ -55,6 +55,9 @@ COPYRIGHT 1993-1998 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "ogl_init.h"
 #endif
 #include "args.h"
+#ifdef USE_VR
+#include "vr_descent.h"
+#endif
 
 #define INITIAL_LOCAL_LIGHT (F1_0/4)    // local light value in segment of occurence (of light emission)
 
@@ -1370,7 +1373,11 @@ void render_frame(fix eye_offset)
 	}
 
 	if ( Newdemo_state == ND_STATE_RECORDING )	{
-		if (eye_offset >= 0 )	{
+		if (eye_offset >= 0
+#ifdef USE_VR
+			&& !vrd_repeat_eye()	// one record per frame, not per eye
+#endif
+			)	{
 			newdemo_record_start_frame(FrameTime );
 			newdemo_record_viewer_object(Viewer);
 		}
@@ -1399,6 +1406,25 @@ void render_frame(fix eye_offset)
 	if (start_seg_num==-1)
 		start_seg_num = Viewer->segnum;
 
+#ifdef USE_VR
+	if (vrd_eye_active()) {
+		// The ship (turned round for the rear view) with the head on it.
+		vms_matrix base,viewm;
+		base = Viewer->orient;
+		if (Rear_view && (Viewer==ConsoleObject)) {
+			vms_matrix headm;
+			Player_head_angles.p = Player_head_angles.b = 0;
+			Player_head_angles.h = 0x7fff;
+			vm_angles_2_matrix(&headm,&Player_head_angles);
+			vm_matrix_x_matrix(&base,&Viewer->orient,&headm);
+		}
+		vrd_eye_view(&Viewer_eye,&viewm,&Viewer->pos,&base);
+		start_seg_num = find_point_seg(&Viewer_eye,Viewer->segnum);
+		if (start_seg_num==-1)
+			start_seg_num = Viewer->segnum;
+		g3_set_view_matrix(&Viewer_eye,&viewm,vrd_eye_zoom());
+	} else
+#endif
 	if (Rear_view && (Viewer==ConsoleObject)) {
 		vms_matrix headm,viewm;
 		Player_head_angles.p = Player_head_angles.b = 0;

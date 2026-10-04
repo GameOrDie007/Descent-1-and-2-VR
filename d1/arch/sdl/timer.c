@@ -8,6 +8,9 @@
 
 #include "maths.h"
 #include "timer.h"
+#ifdef USE_VR
+#include "vr_descent.h"
+#endif
 #include "config.h"
 
 static fix64 F64_RunTime = 0;
@@ -44,6 +47,13 @@ void timer_delay2(int fps)
 {
 	static u_int32_t FrameStart=0;
 	u_int32_t FrameLoop=0;
+
+#ifdef USE_VR
+	// The headset paces every frame through xrWaitFrame.  The menus' own
+	// 50 fps cap on top of it made them miss every other frame (46 fps).
+	if (vrd_paced())
+		return;
+#endif
 
 	while (FrameLoop < 1000/(GameCfg.VSync?MAXIMUM_FPS:fps))
 	{

@@ -45,6 +45,14 @@ COPYRIGHT 1993-1999 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "mission.h"
 #include "config.h"
 #include "args.h"
+#ifdef USE_VR
+#include "vr_descent.h"
+#endif
+#ifdef USE_VR
+// In the headset the credits keep its frame rate: the scroll steps at its
+// own rate and the frames between draw the same picture again.
+static int credits_vr_hold;
+#endif
 
 #define ROW_SPACING			(SHEIGHT / 17)
 #define NUM_LINES			20 //14
@@ -94,9 +102,26 @@ int credits_handler(window *wind, d_event *event, credits *cr)
 			break;
 			
 		case EVENT_WINDOW_DRAW:
+#ifdef USE_VR
+			credits_vr_hold = 0;
+			if (vrd_paced())
+			{
+				static fix64 next_step;
+				const fix64 now = timer_query();
+				if (now < next_step)
+					credits_vr_hold = 1;
+				else
+					next_step = now + F1_0/28;
+			}
+			else
+#endif
 			timer_delay(F1_0/28);
 			
-			if (cr->row == 0)
+			if (cr->row == 0
+#ifdef USE_VR
+				&& !credits_vr_hold
+#endif
+				)
 			{
 				do {
 					cr->buffer_line = (cr->buffer_line+1) % NUM_LINES;
@@ -173,6 +198,9 @@ int credits_handler(window *wind, d_event *event, credits *cr)
 				y += ROW_SPACING;
 			}
 			
+#ifdef USE_VR
+			if (!credits_vr_hold)
+#endif
 			cr->row += SHEIGHT/200;
 			if (cr->row >= ROW_SPACING)
 				cr->row = 0;

@@ -1,0 +1,26 @@
+Game Or Die's own files in Descent 1 & 2 VR
+===========================================
+
+Copyright (c) 2026 Game Or Die. All rights reserved.
+
+These files are Game Or Die's own work. They are not part of the Descent
+source code and contain none of it:
+
+  GameOrDieXR.dll    the VR library (in each game's VR\game folder)
+  vrsplash.png       the splash art
+  Setup.bat, Uninstall.bat, Collect logs.bat and setup.ps1, the installer
+  LICENSE-GameOrDie.txt, this file
+
+You may use them to play Descent 1 & 2 VR, and you may share them only
+unmodified, as part of the complete Descent 1 & 2 VR release. You may not
+modify them, decompile or reverse engineer them, copy them into another
+project, or share them on their own.
+
+The Game Or Die name and logo are not licensed for any use. A copy or a
+changed version of this port must not present itself as Game Or Die's.
+
+Everything else in this release is the Descent engine (DXX-Redux), under
+the Parallax and D1X-Rebirth licenses in COPYING.txt and
+COPYING-Descent2.txt: non-commercial use only. Its source, with our
+changes to it, is published at
+https://github.com/GameOrDie007/Descent-1-and-2-VR

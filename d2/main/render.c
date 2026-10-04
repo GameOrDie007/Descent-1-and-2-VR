@@ -55,6 +55,9 @@ COPYRIGHT 1993-1999 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "ogl_init.h"
 #endif
 #include "args.h"
+#ifdef USE_VR
+#include "vr_descent.h"
+#endif
 
 #define INITIAL_LOCAL_LIGHT (F1_0/4)    // local light value in segment of occurence (of light emission)
 
@@ -1610,7 +1613,11 @@ void render_frame(fix eye_offset, int window_num)
 		return;
 	}
 
-	if ( Newdemo_state == ND_STATE_RECORDING && eye_offset >= 0 )	{
+	if ( Newdemo_state == ND_STATE_RECORDING && eye_offset >= 0
+#ifdef USE_VR
+		&& !vrd_repeat_eye()	// one record per frame, not per eye
+#endif
+		)	{
      
       if (RenderingType==0)
    		newdemo_record_start_frame(FrameTime );
@@ -1622,6 +1629,9 @@ void render_frame(fix eye_offset, int window_num)
 
 	start_lighting_frame(Viewer);		//this is for ugly light-smoothing hack
   
+#ifdef USE_VR
+	vrd_view_begin(window_num);	// the cockpit's extra views stay flat in an eye
+#endif
 	g3_start_frame();
 
 	Viewer_eye = Viewer->pos;
@@ -1643,6 +1653,25 @@ void render_frame(fix eye_offset, int window_num)
 	if (start_seg_num==-1)
 		start_seg_num = Viewer->segnum;
 
+#ifdef USE_VR
+	if (vrd_eye_active()) {
+		// The ship (turned round for the rear view) with the head on it.
+		vms_matrix base,viewm;
+		base = Viewer->orient;
+		if (Rear_view && (Viewer==get_player_view_object())) {
+			vms_matrix headm;
+			Player_head_angles.p = Player_head_angles.b = 0;
+			Player_head_angles.h = 0x7fff;
+			vm_angles_2_matrix(&headm,&Player_head_angles);
+			vm_matrix_x_matrix(&base,&Viewer->orient,&headm);
+		}
+		vrd_eye_view(&Viewer_eye,&viewm,&Viewer->pos,&base);
+		start_seg_num = find_point_seg(&Viewer_eye,Viewer->segnum);
+		if (start_seg_num==-1)
+			start_seg_num = Viewer->segnum;
+		g3_set_view_matrix(&Viewer_eye,&viewm,vrd_eye_zoom());
+	} else
+#endif
 	if (Rear_view && (Viewer==get_player_view_object())) {
 		vms_matrix headm,viewm;
 		Player_head_angles.p = Player_head_angles.b = 0;
@@ -1678,6 +1707,9 @@ void render_frame(fix eye_offset, int window_num)
 	render_mine(start_seg_num, eye_offset, window_num);
 
 	g3_end_frame();
+#ifdef USE_VR
+	vrd_view_end(window_num);
+#endif
 
    //RenderingType=0;
 

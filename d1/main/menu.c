@@ -39,6 +39,9 @@ COPYRIGHT 1993-1998 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "gamesave.h"
 #include "palette.h"
 #include "args.h"
+#ifdef USE_VR
+#include "vr_descent.h"
+#endif
 #include "newdemo.h"
 #include "timer.h"
 #include "sounds.h"
@@ -98,6 +101,9 @@ enum MENUS
     #endif
 
     MENU_SHOW_CREDITS,
+#ifdef USE_VR
+    MENU_SWITCH_GAME,	// Switch Game: close this game, start the other in the headset
+#endif
     MENU_ORDER_INFO,
 
     #ifdef USE_UDP
@@ -485,6 +491,14 @@ void create_main_menu(newmenu_item *m, int *menu_choice, int *callers_num_option
 		ADD_ITEM(TXT_ORDERING_INFO,MENU_ORDER_INFO,-1);
 	ADD_ITEM(TXT_CREDITS,MENU_SHOW_CREDITS,-1);
 	#endif
+#ifdef USE_VR
+	if (vrd_switch_available())	// the other game is installed
+	{
+		static char switch_text[40];
+		snprintf(switch_text, sizeof(switch_text), "Switch to %s", vrd_other_game_name());
+		ADD_ITEM(switch_text,MENU_SWITCH_GAME,-1);
+	}
+#endif
 	ADD_ITEM(TXT_QUIT,MENU_QUIT,KEY_Q);
 
 	#ifndef RELEASE
@@ -536,6 +550,9 @@ int do_option ( int select)
 {
 	switch (select) {
 		case MENU_NEW_GAME:
+#ifdef USE_VR
+			vrd_play_style_once();	// Modern or Classic, asked once
+#endif
 			select_mission(0, "New Game\n\nSelect mission", do_new_game_menu);
 			break;
 		case MENU_GAME:
@@ -565,6 +582,11 @@ int do_option ( int select)
 		case MENU_ORDER_INFO:
 			show_order_form();
 			break;
+#endif
+#ifdef USE_VR
+		case MENU_SWITCH_GAME:
+			vrd_switch_game();
+			return 0;
 #endif
 		case MENU_QUIT:
 			#ifdef EDITOR
@@ -2476,11 +2498,220 @@ void do_multi_player_menu()
 }
 #endif
 
+#ifdef USE_VR
+/* The game's Options in the headset: the pages a
+ * player needs, sorted, and everything else behind "Show advanced
+ * options".  The short Gameplay and Graphics pages set the same settings
+ * as the game's full pages, which stay as they were under the advanced
+ * rows.  Flat play keeps the stock Options. */
+static void vr_gameplay_page(void)
+{
+	newmenu_item m[8];
+	int n = 0, i_level, i_ammo, i_shield;
+	memset(m, 0, sizeof(m));
+	m[n].type = NM_TYPE_CHECK; m[n].text = "Ship auto-leveling"; m[n].value = PlayerCfg.AutoLeveling; i_level = n++;
+	m[n].type = NM_TYPE_CHECK; m[n].text = "Ammo warnings"; m[n].value = PlayerCfg.VulcanAmmoWarnings; i_ammo = n++;
+	m[n].type = NM_TYPE_CHECK; m[n].text = "Shield warnings"; m[n].value = PlayerCfg.ShieldWarnings; i_shield = n++;
+	newmenu_do(NULL, "Gameplay", n, m, NULL, NULL);
+	PlayerCfg.AutoLeveling = m[i_level].value;
+	PlayerCfg.VulcanAmmoWarnings = m[i_ammo].value;
+	PlayerCfg.ShieldWarnings = m[i_shield].value;
+}
+
+static int vr_snd_fx, vr_snd_music, vr_snd_rev;
+
+static int vr_sound_menuset(newmenu *menu, d_event *event, void *userdata)
+{
+	newmenu_item *items = newmenu_get_items(menu);
+	const int citem = newmenu_get_citem(menu);
+	(void)userdata;
+	if (event->type == EVENT_NEWMENU_CHANGED) {
+		if (citem == vr_snd_fx) {
+			GameCfg.DigiVolume = items[citem].value;
+			digi_set_digi_volume((GameCfg.DigiVolume * 32768) / 8);
+			digi_play_sample_once(SOUND_DROP_BOMB, F1_0);
+		} else if (citem == vr_snd_music) {
+			GameCfg.MusicVolume = items[citem].value;
+			songs_set_volume(GameCfg.MusicVolume);
+		} else if (citem == vr_snd_rev)
+			GameCfg.ReverseStereo = items[citem].value;
+	}
+	return 0;
+}
+
+static void vr_sound_page(void)
+{
+	newmenu_item m[3];
+	int n = 0;
+	memset(m, 0, sizeof(m));
+	vr_snd_fx = n;
+	m[n].type = NM_TYPE_SLIDER; m[n].text = "Effects volume"; m[n].value = GameCfg.DigiVolume; m[n].min_value = 0; m[n].max_value = 8; n++;
+	vr_snd_music = n;
+	m[n].type = NM_TYPE_SLIDER; m[n].text = "Music volume"; m[n].value = GameCfg.MusicVolume; m[n].min_value = 0; m[n].max_value = 8; n++;
+	vr_snd_rev = n;
+	m[n].type = NM_TYPE_CHECK; m[n].text = "Reverse stereo"; m[n].value = GameCfg.ReverseStereo; n++;
+	newmenu_do(NULL, "Sound and Music", n, m, vr_sound_menuset, NULL);
+}
+
+static int vr_gfx_texfilt, vr_gfx_bright;
+
+static int vr_graphics_menuset(newmenu *menu, d_event *event, void *userdata)
+{
+	newmenu_item *items = newmenu_get_items(menu);
+	const int citem = newmenu_get_citem(menu);
+	(void)userdata;
+	if (event->type == EVENT_NEWMENU_CHANGED) {
+		if (citem == vr_gfx_texfilt + 3 && ogl_maxanisotropy <= 1.0) {
+			nm_messagebox(TXT_ERROR, 1, TXT_OK, "Anisotropic Filtering not\nsupported by your hardware/driver.");
+			items[vr_gfx_texfilt + 3].value = 0;
+			items[vr_gfx_texfilt + 2].value = 1;
+		}
+		if (citem == vr_gfx_bright)
+			gr_palette_set_gamma(items[citem].value);
+	}
+	return 0;
+}
+
+static void vr_graphics_page(void)
+{
+	newmenu_item m[14];
+	int n = 0, i, i_alpha, i_dyn, i_debris, i_msaa;
+	memset(m, 0, sizeof(m));
+	m[n].type = NM_TYPE_TEXT; m[n].text = "Texture filtering:"; n++;
+	vr_gfx_texfilt = n;
+	m[n].type = NM_TYPE_RADIO; m[n].text = "None (Classic)"; m[n].group = 0; n++;
+	m[n].type = NM_TYPE_RADIO; m[n].text = "Bilinear"; m[n].group = 0; n++;
+	m[n].type = NM_TYPE_RADIO; m[n].text = "Trilinear"; m[n].group = 0; n++;
+	m[n].type = NM_TYPE_RADIO; m[n].text = "Anisotropic"; m[n].group = 0; n++;
+	m[vr_gfx_texfilt + GameCfg.TexFilt].value = 1;
+	m[n].type = NM_TYPE_TEXT; m[n].text = ""; n++;
+	vr_gfx_bright = n;
+	m[n].type = NM_TYPE_SLIDER; m[n].text = TXT_BRIGHTNESS; m[n].value = gr_palette_get_gamma(); m[n].min_value = 0; m[n].max_value = 16; n++;
+	m[n].type = NM_TYPE_CHECK; m[n].text = "Transparency effects"; m[n].value = PlayerCfg.AlphaEffects; i_alpha = n++;
+	m[n].type = NM_TYPE_CHECK; m[n].text = "Colored dynamic light"; m[n].value = PlayerCfg.DynLightColor; i_dyn = n++;
+	m[n].type = NM_TYPE_CHECK; m[n].text = "Persistent debris"; m[n].value = PlayerCfg.PersistentDebris; i_debris = n++;
+	m[n].type = NM_TYPE_CHECK; m[n].text = "4x MSAA (on restart)"; m[n].value = GameCfg.Multisample; i_msaa = n++;
+	newmenu_do(NULL, "Graphics", n, m, vr_graphics_menuset, NULL);
+	for (i = 0; i <= 3; i++)
+		if (m[vr_gfx_texfilt + i].value)
+			GameCfg.TexFilt = i;
+	GameCfg.GammaLevel = m[vr_gfx_bright].value;
+	PlayerCfg.AlphaEffects = m[i_alpha].value;
+	PlayerCfg.DynLightColor = m[i_dyn].value;
+	PlayerCfg.PersistentDebris = m[i_debris].value;
+	GameCfg.Multisample = m[i_msaa].value;
+	/* As the full page does: the textures take the new filtering (under VR
+	 * the window and GL context are kept). */
+	gr_set_attributes();
+	gr_set_mode(Game_screen_mode);
+}
+
+/* The root.  Each row's job, by position, for the callback. */
+enum { VRO_NONE, VRO_VR, VRO_GAMEPLAY, VRO_GRAPHICS, VRO_SOUND, VRO_ADVANCED, VRO_ALL_SOUND,
+	VRO_ALL_GAMEPLAY, VRO_ALL_GRAPHICS, VRO_INPUT, VRO_PRIMARY, VRO_SECONDARY,
+	VRO_RES, VRO_SPECTATE };
+#define VRO_ROWS 20
+static int vr_opt_row[VRO_ROWS];
+static int vr_opt_rebuild;	/* the advanced switch moved: reopen at this row + 1 */
+static void vr_options_open(int citem);
+
+static int vr_options_menuset(newmenu *menu, d_event *event, void *userdata)
+{
+	const int citem = newmenu_get_citem(menu);
+	const int row = (citem >= 0 && citem < VRO_ROWS) ? vr_opt_row[citem] : VRO_NONE;
+	(void)userdata;
+	switch (event->type)
+	{
+		case EVENT_NEWMENU_CHANGED:
+			if (row == VRO_ADVANCED) {
+				VrSet.show_advanced = newmenu_get_items(menu)[citem].value;
+				vrd_settings_save();
+				vr_opt_rebuild = citem + 1;	// reopened on the next idle, outside the menu's own key handling
+			}
+			break;
+		case EVENT_IDLE:
+			if (vr_opt_rebuild) {
+				const int at = vr_opt_rebuild - 1;
+				vr_opt_rebuild = 0;
+				window_close(newmenu_get_window(menu));
+				vr_options_open(at);
+				return 1;
+			}
+			break;
+		case EVENT_NEWMENU_SELECTED:
+			switch (row)
+			{
+				case VRO_VR:			vrd_options_menu();	break;
+				case VRO_GAMEPLAY:		vr_gameplay_page();	break;
+				case VRO_GRAPHICS:		vr_graphics_page();	break;
+				case VRO_SOUND:			vr_sound_page();		break;
+				case VRO_ALL_SOUND:		do_sound_menu();		break;
+				case VRO_ALL_GAMEPLAY:	do_misc_menu();		break;
+				case VRO_ALL_GRAPHICS:	graphics_config();	break;
+				case VRO_INPUT:			input_config();		break;
+				case VRO_PRIMARY:		ReorderPrimary();	break;
+				case VRO_SECONDARY:		ReorderSecondary();	break;
+				case VRO_RES:			change_res();		break;
+				case VRO_SPECTATE:		do_obs_menu();		break;
+			}
+			return 1;	// stay in the menu until escape
+		case EVENT_WINDOW_CLOSE:
+		{
+			newmenu_item *items = newmenu_get_items(menu);
+			d_free(items);
+			write_player_file();
+			break;
+		}
+		default:
+			break;
+	}
+	return 0;
+}
+
+static void vr_options_open(int citem)
+{
+	newmenu_item *m;
+	int n = 0;
+	MALLOC(m, newmenu_item, VRO_ROWS);
+	if (!m)
+		return;
+	memset(m, 0, sizeof(newmenu_item) * VRO_ROWS);
+	memset(vr_opt_row, 0, sizeof(vr_opt_row));
+#define VRO_MENU(job, txt) do { m[n].type = NM_TYPE_MENU; m[n].text = (txt); vr_opt_row[n++] = (job); } while (0)
+#define VRO_GAP() do { m[n].type = NM_TYPE_TEXT; m[n].text = ""; vr_opt_row[n++] = VRO_NONE; } while (0)
+	VRO_MENU(VRO_VR, "VR Options...");
+	VRO_GAP();
+	VRO_MENU(VRO_GAMEPLAY, "Gameplay...");
+	VRO_MENU(VRO_GRAPHICS, "Graphics...");
+	VRO_MENU(VRO_SOUND, "Sound and Music...");
+	VRO_GAP();
+	m[n].type = NM_TYPE_CHECK; m[n].text = "Show advanced options"; m[n].value = VrSet.show_advanced;
+	vr_opt_row[n++] = VRO_ADVANCED;
+	if (VrSet.show_advanced) {
+		VRO_GAP();
+		VRO_MENU(VRO_ALL_GAMEPLAY, "All gameplay options...");
+		VRO_MENU(VRO_ALL_GRAPHICS, "All graphics options...");
+		VRO_MENU(VRO_ALL_SOUND, "All sound options...");
+		VRO_MENU(VRO_INPUT, "Keyboard, mouse, joystick...");
+		VRO_MENU(VRO_PRIMARY, "Primary weapon order...");
+		VRO_MENU(VRO_SECONDARY, "Secondary weapon order...");
+		VRO_MENU(VRO_RES, "Resolution (flat)...");
+		VRO_MENU(VRO_SPECTATE, "Multiplayer spectating...");
+	}
+#undef VRO_MENU
+#undef VRO_GAP
+	if (citem < 0 || citem >= n)
+		citem = 0;
+	newmenu_do3(NULL, TXT_OPTIONS, n, m, vr_options_menuset, NULL, citem, NULL);
+}
+
+#endif
+
 void do_options_menu()
 {
 	newmenu_item *m;
 
-	MALLOC(m, newmenu_item, 11);
+	MALLOC(m, newmenu_item, 13);
 	if (!m)
 		return;
 
@@ -2498,6 +2729,16 @@ void do_options_menu()
 
 	// Fall back to main event loop
 	// Allows clean closing and re-opening when resolution changes
+#ifdef USE_VR
+	if (vrd_enabled())
+	{
+		// In the headset: VR Options first, the pages a player needs, and
+		// the rest behind "Show advanced options" (vr_options_open).
+		d_free(m);
+		vr_options_open(0);
+		return;
+	}
+#endif
 	newmenu_do3( NULL, TXT_OPTIONS, 11, m, options_menuset, NULL, 0, NULL );
 }
 

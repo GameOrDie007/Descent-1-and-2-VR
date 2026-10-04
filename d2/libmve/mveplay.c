@@ -191,6 +191,19 @@ static void timer_start(void)
 	timer_started=1;
 }
 
+/* Is the next frame due?  The same test do_timer_wait() makes, without the
+   sleep: a caller that has other work at its own rate (a VR headset) can
+   show the last frame again until it is. */
+int MVE_rmFrameDue(void)
+{
+	struct timeval tv;
+	if (!timer_started)
+		return 1;
+	gettimeofday(&tv, NULL);
+	return tv.tv_sec > timer_expire.tv_sec ||
+		(tv.tv_sec == timer_expire.tv_sec && tv.tv_usec >= timer_expire.tv_usec);
+}
+
 static void do_timer_wait(void)
 {
 	int nsec=0;

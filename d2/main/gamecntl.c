@@ -61,6 +61,9 @@ COPYRIGHT 1993-1999 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "weapon.h"
 #include "sounds.h"
 #include "args.h"
+#ifdef USE_VR
+#include "vr_descent.h"
+#endif
 #include "gameseq.h"
 #include "automap.h"
 #include "text.h"
@@ -774,6 +777,19 @@ int HandleSystemKey(int key)
 			{
 				int choice;
 				int allow_loadsave = !(Game_mode & GM_MULTI) || (Game_mode & GM_MULTI_COOP);
+#ifdef USE_VR
+				if (vrd_enabled())
+				{
+					// In the headset: Resume, then VR Options, then the game's own rows.
+					choice = allow_loadsave ?
+						nm_messagebox(NULL, 6, "Resume", "VR Options", "Abort Game", TXT_OPTIONS_, "Save Game...", TXT_LOAD_GAME, "Game Menu") :
+						nm_messagebox(NULL, 4, "Resume", "VR Options", "Abort Game", TXT_OPTIONS_, "Game Menu");
+					if (choice == 1)
+						vrd_options_menu();
+					choice -= 2;	// the game's own rows follow
+				}
+				else
+#endif
 				choice = allow_loadsave ?
 					nm_messagebox(NULL, 4, "Abort Game", TXT_OPTIONS_, "Save Game...", TXT_LOAD_GAME, "Game Menu") :
 					nm_messagebox(NULL, 2, "Abort Game", TXT_OPTIONS_, "Game Menu");
@@ -2064,3 +2080,29 @@ int ReadControls(d_event *event)
 	return 0;
 }
 
+#ifdef USE_VR
+// The VR test kit (-vrkit, the test launchers only): every weapon and item
+// at each level start, so a headset round can try them all without hunting
+// for pickups.  The score and the cheat flag are left alone.
+void vrd_give_test_kit(void)
+{
+	player *plr = &Players[Player_num];
+	int i;
+	plr->primary_weapon_flags = 0xffff;
+	plr->secondary_weapon_flags = 0xffff;
+	plr->laser_level = MAX_SUPER_LASER_LEVEL;
+	plr->flags |= PLAYER_FLAGS_HEADLIGHT | PLAYER_FLAGS_AFTERBURNER |
+		PLAYER_FLAGS_AMMO_RACK | PLAYER_FLAGS_CONVERTER;
+	for (i = 0; i < MAX_PRIMARY_WEAPONS; i++)
+		plr->primary_ammo[i] = Primary_ammo_max[i];
+	for (i = 0; i < MAX_SECONDARY_WEAPONS; i++)
+		plr->secondary_ammo[i] = Secondary_ammo_max[i];
+	plr->energy = MAX_ENERGY;
+	plr->shields = MAX_SHIELDS;
+	if (ConsoleObject)
+		ConsoleObject->shields = MAX_SHIELDS;
+	plr->flags |= PLAYER_FLAGS_QUAD_LASERS;
+	update_laser_weapon_info();
+	HUD_init_message_literal(HM_DEFAULT, "VR test kit: every weapon and item");
+}
+#endif

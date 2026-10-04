@@ -34,6 +34,14 @@ COPYRIGHT 1993-1999 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "text.h"
 #include "kconfig.h"
 #include "config.h"
+#ifdef USE_VR
+#include "vr_descent.h"
+#endif
+#ifdef USE_VR
+#define LISTENER_ORIENT vrd_listener_orient(&Viewer->orient)	// the ears turn with the head
+#else
+#define LISTENER_ORIENT (&Viewer->orient)
+#endif
 
 #define SOF_USED				1 		// Set if this sample is used
 #define SOF_PLAYING			2		// Set if this sample is playing on a channel
@@ -344,7 +352,7 @@ int digi_link_sound_to_object3( int org_soundnum, short objnum, int forever, fix
 
 	if ( !forever ) { 		// && GameSounds[soundnum - SOUND_OFFSET].length < SOUND_3D_THRESHHOLD)	{
 		// Hack to keep sounds from building up...
-		digi_get_sound_loc( &Viewer->orient, &Viewer->pos, Viewer->segnum, &Objects[objnum].pos, Objects[objnum].segnum, max_volume,&volume, &pan, max_distance );
+		digi_get_sound_loc( LISTENER_ORIENT, &Viewer->pos, Viewer->segnum, &Objects[objnum].pos, Objects[objnum].segnum, max_volume,&volume, &pan, max_distance );
 		digi_play_sample_3d( org_soundnum, pan, volume, 0 );
 		return -1;
 	}
@@ -382,7 +390,7 @@ int digi_link_sound_to_object3( int org_soundnum, short objnum, int forever, fix
 	}
 	else {
 		objp = &Objects[SoundObjects[i].link_type.obj.objnum];
-		digi_get_sound_loc( &Viewer->orient, &Viewer->pos, Viewer->segnum,
+		digi_get_sound_loc( LISTENER_ORIENT, &Viewer->pos, Viewer->segnum,
                        &objp->pos, objp->segnum, SoundObjects[i].max_volume,
                        &SoundObjects[i].volume, &SoundObjects[i].pan, SoundObjects[i].max_distance );
 
@@ -432,7 +440,7 @@ int digi_link_sound_to_pos2( int org_soundnum, short segnum, short sidenum, vms_
 
 	if ( !forever ) { 	//&& GameSounds[soundnum - SOUND_OFFSET].length < SOUND_3D_THRESHHOLD)	{
 		// Hack to keep sounds from building up...
-		digi_get_sound_loc( &Viewer->orient, &Viewer->pos, Viewer->segnum, pos, segnum, max_volume, &volume, &pan, max_distance );
+		digi_get_sound_loc( LISTENER_ORIENT, &Viewer->pos, Viewer->segnum, pos, segnum, max_volume, &volume, &pan, max_distance );
 		digi_play_sample_3d( org_soundnum, pan, volume, 0 );
 		return -1;
 	}
@@ -468,7 +476,7 @@ int digi_link_sound_to_pos2( int org_soundnum, short segnum, short sidenum, vms_
 	}
 	else {
 
-		digi_get_sound_loc( &Viewer->orient, &Viewer->pos, Viewer->segnum,
+		digi_get_sound_loc( LISTENER_ORIENT, &Viewer->pos, Viewer->segnum,
                        &SoundObjects[i].link_type.pos.position, SoundObjects[i].link_type.pos.segnum, SoundObjects[i].max_volume,
                        &SoundObjects[i].volume, &SoundObjects[i].pan, SoundObjects[i].max_distance );
 
@@ -596,7 +604,7 @@ void digi_sync_sounds()
 			}
 
 			if ( SoundObjects[i].flags & SOF_LINK_TO_POS )	{
-				digi_get_sound_loc( &Viewer->orient, &Viewer->pos, Viewer->segnum,
+				digi_get_sound_loc( LISTENER_ORIENT, &Viewer->pos, Viewer->segnum,
                                 &SoundObjects[i].link_type.pos.position, SoundObjects[i].link_type.pos.segnum, SoundObjects[i].max_volume,
                                 &SoundObjects[i].volume, &SoundObjects[i].pan, SoundObjects[i].max_distance );
 
@@ -628,7 +636,7 @@ void digi_sync_sounds()
 					SoundObjects[i].flags = 0;	// Mark as dead, so some other sound can use this sound
 					continue;		// Go on to next sound...
 				} else {
-					digi_get_sound_loc( &Viewer->orient, &Viewer->pos, Viewer->segnum,
+					digi_get_sound_loc( LISTENER_ORIENT, &Viewer->pos, Viewer->segnum,
 	                                &objp->pos, objp->segnum, SoundObjects[i].max_volume,
                                    &SoundObjects[i].volume, &SoundObjects[i].pan, SoundObjects[i].max_distance );
 				}

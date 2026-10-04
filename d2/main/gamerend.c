@@ -50,6 +50,9 @@ COPYRIGHT 1993-1999 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "mission.h"
 #include "gameseq.h"
 #include "args.h"
+#ifdef USE_VR
+#include "vr_descent.h"
+#endif
 
 #ifdef OGL
 #include "ogl_init.h"
@@ -849,11 +852,23 @@ void game_render_frame_mono(int flip)
 
 	gr_set_current_canvas(&Screen_3d_window);
 
+#ifdef USE_VR
+	if (vrd_eye_active())
+	{
+		// In an eye only the crosshair: the HUD goes on the panel.
+		if (!Rear_view && PlayerCfg.HudMode != 3 && Viewer->type == OBJ_PLAYER)
+			show_reticle(PlayerCfg.ReticleType, 1);
+	}
+	else
+#endif
 	if (!no_draw_hud)
 		game_draw_hud_stuff();
 
 	gr_set_current_canvas(NULL);
 
+#ifdef USE_VR
+	if (!vrd_eye_active())	// in the headset they go on the HUD panel
+#endif
 	show_extra_views();		//missile view, buddy bot, etc.
 
 #ifdef NETWORK

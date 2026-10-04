@@ -53,6 +53,9 @@ COPYRIGHT 1993-1999 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "ogl_init.h"
 #endif
 #include "args.h"
+#ifdef USE_VR
+#include "vr_descent.h"
+#endif
 
 extern char CDROM_dir[];
 
@@ -89,6 +92,29 @@ SDL_RWops *RoboFile;
 
 // Function Prototypes
 int RunMovie(char *filename, int highres_flag, int allow_abort,int dx,int dy);
+
+/* Step the movie or, while the headset paces the game and the next movie
+   frame is not due yet, show the last one again (returns 0, as a step
+   that went well does).  The decoder would otherwise sleep inside the
+   frame until it was due, holding the headset to the movie's rate. */
+void MovieShowFrame(ubyte *buf, int dstx, int dsty, int bufw, int bufh, int sw, int sh);
+#ifdef USE_VR
+/* The last frame shown, to show again on headset frames between movie frames. */
+static ubyte *vr_last_buf;
+static int vr_last[6];
+#endif
+
+static int movie_step(void)
+{
+#ifdef USE_VR
+	if (vrd_paced() && vr_last_buf && !MVE_rmFrameDue())
+	{
+		MovieShowFrame(vr_last_buf, vr_last[0], vr_last[1], vr_last[2], vr_last[3], vr_last[4], vr_last[5]);
+		return -1;	// a repeat: no new frame
+	}
+#endif
+	return MVE_rmStepMovie();
+}
 
 void decode_text_line(char *p);
 void draw_subtitles(int frame_num);
@@ -169,6 +195,11 @@ void MovieShowFrame(ubyte *buf, int dstx, int dsty, int bufw, int bufh, int sw, 
 	static ubyte old_pal[768];
 	float scale = 1.0;
 
+#ifdef USE_VR
+	vr_last_buf = buf;
+	vr_last[0] = dstx; vr_last[1] = dsty; vr_last[2] = bufw;
+	vr_last[3] = bufh; vr_last[4] = sw; vr_last[5] = sh;
+#endif
 	if (memcmp(old_pal,gr_palette,768))
 	{
 		memcpy(old_pal,gr_palette,768);
@@ -323,7 +354,15 @@ int MovieHandler(window *wind, d_event *event, movie *m)
 		case EVENT_WINDOW_DRAW:
 			if (!m->paused)
 			{
-				m->result = MVE_rmStepMovie();
+				m->result = movie_step();
+				if (m->result == -1)
+				{
+					// The same movie frame again: subtitles, and no frame count.
+					m->result = 0;
+					draw_subtitles(m->frame_num);
+					gr_palette_load(gr_palette);
+					break;
+				}
 				if (m->result)
 				{
 					window_close(wind);
@@ -463,7 +502,9 @@ int RotateRobot()
 {
 	int err;
 
-	err = MVE_rmStepMovie();
+	err = movie_step();
+	if (err == -1)
+		return 1;	// the same robot frame again
 
 	gr_palette_load(gr_palette);
 

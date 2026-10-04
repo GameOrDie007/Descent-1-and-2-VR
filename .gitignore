@@ -60,3 +60,11 @@ Thumbs.db
 *.app
 d*x-rebirth
 /*/out/install
+
+# Local, never published #
+##########################
+build-local.cmd
+
+# GameOrDieXR, prebuilt (its source is not published)
+!vr/lib/GameOrDieXR.dll
+!vr/lib/GameOrDieXR.lib

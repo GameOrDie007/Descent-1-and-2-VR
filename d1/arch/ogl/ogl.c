@@ -56,6 +56,18 @@
 #include "args.h"
 #include "xmodel.h"
 #include "oglprog.h"
+#ifdef USE_VR
+#include "vr_descent.h"
+#endif
+#ifdef USE_VR
+// On the VR panel, alpha is blended separately so that what is drawn
+// covers what is behind the panel (see vrd_panel_alpha).
+#define OGL_BLENDFUNC(s,d) do { if (vrd_panel_alpha()) glBlendFuncSeparate((s), (d), \
+	((d) == GL_ONE) ? GL_ZERO : GL_ONE, ((d) == GL_ONE) ? GL_ONE : GL_ONE_MINUS_SRC_ALPHA); \
+	else glBlendFunc((s), (d)); } while (0)
+#else
+#define OGL_BLENDFUNC(s,d) glBlendFunc((s), (d))
+#endif
 
 //change to 1 for lots of spew.
 #if 0
@@ -217,6 +229,40 @@ void ogl_init_texture_list_internal(void){
 	for (i=0;i<OGL_TEXTURE_LIST_SIZE;i++)
 		ogl_reset_texture(&ogl_texture_list[i]);
 }
+
+#ifdef USE_VR
+// In the headset the GL context is kept on a video mode change, so the
+// textures are too: a new filter setting is given to the loaded textures in
+// place.  Smashing and reloading them all mid-level (as a real mode change
+// must) can leave surfaces untextured.  A texture loaded
+// unfiltered has only its full size; its mipmaps are made here.
+void ogl_vr_refilter_textures(int texfilt)
+{
+	GLint bound = 0;
+	int i, n = 0;
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &bound);
+	for (i = 0; i < OGL_TEXTURE_LIST_SIZE; i++) {
+		const GLuint h = ogl_texture_list[i].handle;
+		if (h <= 0)
+			continue;
+		glBindTexture(GL_TEXTURE_2D, h);
+		if (texfilt) {
+			glGenerateMipmap(GL_TEXTURE_2D);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, texfilt >= 2 ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR_MIPMAP_NEAREST);
+		} else {
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		}
+		if (ogl_maxanisotropy > 1.0)
+			glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT,
+				texfilt >= 3 ? ogl_maxanisotropy : 1.0f);
+		n++;
+	}
+	glBindTexture(GL_TEXTURE_2D, (GLuint)bound);	// the engine's bind cache stays true
+	con_printf(CON_NORMAL, "VR: %d textures refiltered (filter %d)\n", n, texfilt);
+}
+#endif
 
 void ogl_smash_texture_list_internal(void){
 	int i;
@@ -960,6 +1006,52 @@ bool g3_draw_bitmap_full(vms_vector *pos,fix width,fix height,grs_bitmap *bm,
 	int i;
 	GLfloat vertex_array[12], color_array[16], texcoord_array[8];
 
+#ifdef USE_VR
+	// In the headset the camera is the head: a sprite square to it turns and
+	// rolls with every look.  Build it in the world instead, facing
+	// the eye and upright to the ship; the view transform does the rest.
+	if (vrd_in_eye_pass() && Viewer) {
+		vms_matrix face;
+		vms_vector to_sprite, up = Viewer->orient.uvec, corner;
+		static const signed char k_cx[4] = { -1, 1, 1, -1 }, k_cy[4] = { 1, 1, -1, -1 };
+		vm_vec_sub(&to_sprite, pos, &View_position);
+		if (vm_vec_mag_quick(&to_sprite) > F1_0 / 64) {
+			vm_vector_2_matrix(&face, &to_sprite, &up, NULL);
+			r_bitmapc++;
+			glEnableClientState(GL_VERTEX_ARRAY);
+			glEnableClientState(GL_COLOR_ARRAY);
+			glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+			OGL_ENABLE(TEXTURE_2D);
+			ogl_bindbmtex(bm);
+			ogl_texwrap(bm->gltexture,GL_CLAMP_TO_EDGE);
+			for (i = 0; i < 4; i++) {
+				corner = *pos;
+				vm_vec_scale_add2(&corner, &face.rvec, k_cx[i] * width);
+				vm_vec_scale_add2(&corner, &face.uvec, k_cy[i] * height);
+				vm_vec_sub(&v1, &corner, &View_position);
+				vm_vec_rotate(&pv, &v1, &View_matrix);
+				texcoord_array[i*2] = (k_cx[i] > 0) ? bm->gltexture->u : 0.0;
+				texcoord_array[i*2+1] = (k_cy[i] < 0) ? bm->gltexture->v : 0.0;
+				color_array[i*4]    = r;
+				color_array[i*4+1]  = g;
+				color_array[i*4+2]  = b;
+				color_array[i*4+3]  = (grd_curcanv->cv_fade_level >= GR_FADE_OFF)?1.0:(1.0 - (float)grd_curcanv->cv_fade_level / ((float)GR_FADE_LEVELS - 1.0));
+				vertex_array[i*3]   = f2glf(pv.x);
+				vertex_array[i*3+1] = f2glf(pv.y);
+				vertex_array[i*3+2] = -f2glf(pv.z);
+			}
+			glVertexPointer(3, GL_FLOAT, 0, vertex_array);
+			glColorPointer(4, GL_FLOAT, 0, color_array);
+			glTexCoordPointer(2, GL_FLOAT, 0, texcoord_array);
+			glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+			glDisableClientState(GL_VERTEX_ARRAY);
+			glDisableClientState(GL_COLOR_ARRAY);
+			glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+			return 0;
+		}
+	}
+#endif
+
 	r_bitmapc++;
 	v1.z=0;
 	
@@ -1126,14 +1218,14 @@ void ogl_set_blending()
 	switch ( grd_curcanv->cv_blend_func )
 	{
 		case GR_BLEND_ADDITIVE_A:
-			glBlendFunc( GL_SRC_ALPHA, GL_ONE );
+			OGL_BLENDFUNC(GL_SRC_ALPHA, GL_ONE );
 			break;
 		case GR_BLEND_ADDITIVE_C:
-			glBlendFunc( GL_ONE, GL_ONE );
+			OGL_BLENDFUNC(GL_ONE, GL_ONE );
 			break;
 		case GR_BLEND_NORMAL:
 		default:
-			glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+			OGL_BLENDFUNC(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
 			break;
 	}
 }
@@ -1152,7 +1244,7 @@ void ogl_start_frame(void){
 
 	glLineWidth(linedotscale);
 	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	OGL_BLENDFUNC(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 	glEnable(GL_ALPHA_TEST);
 	glAlphaFunc(GL_GEQUAL,0.02);
@@ -1169,10 +1261,21 @@ void ogl_start_frame(void){
 	glShadeModel(GL_SMOOTH);
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();//clear matrix
+#ifdef USE_VR
+	{
+		// The eye's own asymmetric frustum, in view space as vr_descent scales it.
+		double l, r, b, t;
+		if (vrd_eye_frustum(0.1, &l, &r, &b, &t))
+			glFrustum(l, r, b, t, 0.1, 5000.0);
+		else
+			gluPerspective(90.0,1.0,0.1,5000.0);
+	}
+#else
 #ifdef OGLES
 	perspective(90.0,1.0,0.1,5000.0);   
 #else
 	gluPerspective(90.0,1.0,0.1,5000.0);
+#endif
 #endif
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();//clear matrix

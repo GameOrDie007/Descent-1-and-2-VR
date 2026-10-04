@@ -56,6 +56,9 @@ char copyright[] = "DESCENT II  COPYRIGHT (C) 1994-1996 PARALLAX SOFTWARE CORPOR
 #include "digi.h"
 #include "palette.h"
 #include "args.h"
+#ifdef USE_VR
+#include "vr_descent.h"
+#endif
 #include "titles.h"
 #include "text.h"
 #include "gauges.h"
@@ -105,6 +108,10 @@ void print_commandline_help()
 {
 	printf( "\n System Options:\n\n");
 	printf( "  -nonicefps                    Don't free CPU-cycles\n");
+#ifdef USE_VR
+	printf( "  -vr                           Play in a VR headset (OpenXR)\n");
+	printf( "  -startlevel <n>               Start level <n> with the -pilot pilot, no briefing\n");
+#endif
 	printf( "  -maxfps <n>                   Set maximum framerate to <n>\n\t\t\t\t(default: %i, availble: 1-%i)\n", MAXIMUM_FPS, MAXIMUM_FPS);
 	printf( "  -hogdir <s>                   set shared data directory to <s>\n");
 	printf( "  -nohogdir                     don't try to use shared data directory\n");
@@ -245,6 +252,13 @@ int standard_handler(d_event *event)
 
 				case KEY_ALTED+KEY_ENTER:
 				case KEY_ALTED+KEY_PADENTER:
+#ifdef USE_VR
+					if (vrd_holds_context())	// the spectator view: in flight too
+					{
+						gr_toggle_fullscreen();
+						return 1;
+					}
+#endif
 					if (Game_wind)
 						if (Game_wind == window_get_front())
 							return 0;
@@ -323,7 +337,10 @@ int main(int argc, char *argv[])
 	con_init();  // Initialise the console
 
 	setbuf(stdout, NULL); // unbuffered output via printf
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(USE_VR)
+	// (The VR build is a Windows program with no console: CON would fail and
+	// close stdout, and every printf after would end the process.  Its
+	// WinMain, vr/vr_winmain.c, points the output at NUL instead.)
 	freopen( "CON", "w", stdout );
 	freopen( "CON", "w", stderr );
 #endif
@@ -391,6 +408,9 @@ int main(int argc, char *argv[])
 		con_printf(CON_VERBOSE,"%s%s", TXT_VERBOSE_1, "\n");
 	
 	ReadConfigFile();
+#ifdef USE_VR
+	vrd_startup();	// the headset, before any window: no graphics needed
+#endif
 
 	PHYSFSX_addArchiveContent();
 
@@ -488,12 +508,19 @@ int main(int argc, char *argv[])
 	{
 		Game_mode = GM_GAME_OVER;
 		DoMenu();
+#ifdef USE_VR
+	vrd_start_level_now();
+#endif
 	}
 
 	setjmp(LeaveEvents);
 	while (window_get_front())
 		// Send events to windows and the default handler
 		event_process();
+#ifdef USE_VR
+	vrd_shutdown();	// the session goes before the GL context does
+	vrd_after_exit();	// Switch Game: start the other game now this one is out of the headset
+#endif
 	
 	// Tidy up - avoids a crash on exit
 	{

@@ -49,6 +49,9 @@ COPYRIGHT 1993-1999 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "mouse.h"
 #include "console.h"
 #include "args.h"
+#ifdef USE_VR
+#include "vr_descent.h"
+#endif
 #ifdef OGL
 #include "ogl_init.h"
 #endif
@@ -1058,6 +1061,15 @@ void show_spinning_robot_frame(briefing *br, int robot_num)
 	grs_canvas	*curcanv_save;
 
 	if (robot_num != -1) {
+		if (br->robot_canv == NULL)
+		{
+			// No canvas for the robot (drawing it with none crashes in
+			// draw_model_picture).  Make it, as $R does.
+			init_spinning_robot(br);
+#ifdef USE_VR
+			vrd_note("briefing: the robot picture had no canvas; made one");
+#endif
+		}
 		br->robot_angles.p = br->robot_angles.b = 0;
 		br->robot_angles.h += 150;
 
@@ -1134,7 +1146,24 @@ void free_briefing_screen(briefing *br);
 
 //	-----------------------------------------------------------------------------
 //	loads a briefing screen
+static int load_briefing_screen_at(briefing *br, char *fname);
 int load_briefing_screen(briefing *br, char *fname)
+{
+#ifdef USE_VR
+	// In the headset a briefing page is drawn, and its text laid out, at the
+	// panel's size; set the page up at that size too, or its text box is the
+	// monitor's, the text overflows it and the page reloads mid-way, freeing
+	// the robot picture still on show.
+	const int vr_layout = vrd_layout_begin();
+	const int r = load_briefing_screen_at(br, fname);
+	vrd_layout_end(vr_layout);
+	return r;
+#else
+	return load_briefing_screen_at(br, fname);
+#endif
+}
+
+static int load_briefing_screen_at(briefing *br, char *fname)
 {
 	int pcx_error;
 

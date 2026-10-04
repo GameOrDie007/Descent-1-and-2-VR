@@ -95,6 +95,11 @@ typedef struct Arg
 	int LogNetTraffic; 
 	int GameLogTimeStamp;
 	int GameLogSplit;
+#ifdef USE_VR
+	int VrEnable;
+	int VrStartLevel;
+	int VrKit;
+#endif
 } __pack__ Arg;
 
 extern struct Arg GameArg;

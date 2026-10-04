@@ -52,6 +52,10 @@ extern volatile unsigned char keyd_last_pressed;
 extern volatile unsigned char keyd_last_released;
 
 extern void key_toggle_repeat(int enable);
+#ifdef USE_VR
+extern void key_inject(int keycode, int down);
+extern void key_inject_char(int ch);
+#endif
 
 // for key_ismodlck
 #define KEY_ISMOD	1

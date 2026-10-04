@@ -68,6 +68,9 @@ COPYRIGHT 1993-1999 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "window.h"
 #include "playsave.h"
 #include "args.h"
+#ifdef USE_VR
+#include "vr_descent.h"
+#endif
 
 #ifdef OGL
 #include "ogl_init.h"
@@ -152,6 +155,17 @@ typedef struct automap
 #define K_GREEN_31              BM_XRGB(0, 31, 0)
 
 int Automap_active = 0;
+#ifdef USE_VR
+static window *Automap_wind_vr;
+
+/* The map itself has the controls (no menu over it): the headset's sticks
+ * then fly the map instead of moving a menu highlight. */
+int automap_in_front(void)
+{
+	return Automap_active && Automap_wind_vr && window_get_front() == Automap_wind_vr;
+}
+#endif
+
 
 void init_automap_colors(automap *am)
 {
@@ -537,9 +551,21 @@ void draw_automap(automap *am)
 	gr_set_curfont(GAME_FONT);
 	gr_set_fontcolor(BM_XRGB(20, 20, 20), -1);
 	gr_string((SWIDTH/10.666), (SHEIGHT/1.126), TXT_TURN_SHIP);
+#ifdef USE_VR
+	if (vrd_paced())	// no F9/F10 in a headset: the VR buttons
+		gr_printf((SWIDTH/10.666), (SHEIGHT/1.083), "Trigger: back to ship   B: close");
+	else
+#endif
 	gr_printf((SWIDTH/10.666), (SHEIGHT/1.083), "F9/F10 Changes viewing distance");
 	gr_string((SWIDTH/10.666), (SHEIGHT/1.043), TXT_AUTOMAP_MARKER);
 
+#ifdef USE_VR
+	// The map's view was laid out for the monitor when the map opened; in the
+	// headset the map is drawn on the panel, so lay it out again at the size it
+	// is drawn at (it sat in the panel's top-left corner, v1.0 Frame test).
+	if (vrd_paced())
+		gr_init_sub_canvas(&am->automap_view, &grd_curscreen->sc_canvas, (SWIDTH/23), (SHEIGHT/6), (SWIDTH/1.1), (SHEIGHT/1.45));
+#endif
 	gr_set_current_canvas(&am->automap_view);
 
 	gr_clear_canvas(BM_XRGB(0,0,0));
@@ -629,7 +655,11 @@ void draw_automap(automap *am)
 		show_mousefs_indicator(am->controls.raw_mouse_axis[0], am->controls.raw_mouse_axis[1], am->controls.raw_mouse_axis[2], GWIDTH-(GHEIGHT/8), GHEIGHT-(GHEIGHT/8), GHEIGHT/5);
 
 	am->t2 = timer_query();
-	while (am->t2 - am->t1 < F1_0 / (GameCfg.VSync?MAXIMUM_FPS:GameArg.SysMaxFPS)) // ogl is fast enough that the automap can read the input too fast and you start to turn really slow.  So delay a bit (and free up some cpu :)
+	while (am->t2 - am->t1 < F1_0 / (GameCfg.VSync?MAXIMUM_FPS:GameArg.SysMaxFPS)
+#ifdef USE_VR
+		&& !vrd_paced()	// the headset paces the frames
+#endif
+		) // ogl is fast enough that the automap can read the input too fast and you start to turn really slow.  So delay a bit (and free up some cpu :)
 	{
 		if (GameArg.SysUseNiceFPS && !GameCfg.VSync)
 			timer_delay(f1_0 / GameArg.SysMaxFPS - (am->t2 - am->t1));
@@ -826,6 +856,9 @@ int automap_handler(window *wind, d_event *event, automap *am)
 			d_free(am);
 			window_set_visible(Game_wind, 1);
 			Automap_active = 0;
+#ifdef USE_VR
+			Automap_wind_vr = NULL;
+#endif
 			return 0;	// continue closing
 			break;
 
@@ -932,6 +965,9 @@ void do_automap()
 
 	gr_palette_load( gr_palette );
 	Automap_active = 1;
+#ifdef USE_VR
+	Automap_wind_vr = automap_wind;
+#endif
 }
 
 void adjust_segment_limit(automap *am, int SegmentLimit)

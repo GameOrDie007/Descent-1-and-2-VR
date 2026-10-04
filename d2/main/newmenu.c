@@ -2218,3 +2218,68 @@ newmenu *nm_messagebox_fixedfont( char *title, int nchoices, ... )
         return newmenu_do_fixedfont( title, nm_text, nchoices, nm_message_items, NULL, NULL, 0, NULL );
 }
 //end this section addition - Victor Rachels
+
+#ifdef USE_VR
+// Is the highlighted row of the menu in front a checkbox or radio button?
+// This engine ticks those on Space and closes the page on Enter, so the VR
+// controllers' A has to know which it is pressing.
+int newmenu_front_item_is_toggle(void)
+{
+	window *wind = window_get_front();
+	newmenu *menu;
+
+	if (!wind || !window_has_handler(wind, (int (*)(window *, d_event *, void *))newmenu_handler))
+		return 0;
+	menu = (newmenu *)window_get_data(wind);
+	if (!menu || menu->citem < 0 || menu->citem >= menu->nitems)
+		return 0;
+	return menu->items[menu->citem].type == NM_TYPE_CHECK || menu->items[menu->citem].type == NM_TYPE_RADIO;
+}
+
+// Is the highlighted row of the menu in front a text field being typed in?
+// (An input row always is; an input-menu row once chosen.)  The VR keyboard
+// comes up over it.
+int newmenu_front_item_is_text(void)
+{
+	window *wind = window_get_front();
+	newmenu *menu;
+	newmenu_item *item;
+
+	if (!wind || !window_has_handler(wind, (int (*)(window *, d_event *, void *))newmenu_handler))
+		return 0;
+	menu = (newmenu *)window_get_data(wind);
+	if (!menu || menu->citem < 0 || menu->citem >= menu->nitems)
+		return 0;
+	item = &menu->items[menu->citem];
+	return item->type == NM_TYPE_INPUT || (item->type == NM_TYPE_INPUT_MENU && item->group == 1);
+}
+
+#ifdef USE_VR
+// Typing is the only thing to do here: a save slot being named, or a dialog
+// whose one choosable row is this text box (a new pilot's name).  The VR
+// keyboard comes up by itself only then; elsewhere it waits to be chosen.
+int newmenu_front_text_wants_keyboard(void)
+{
+	window *wind = window_get_front();
+	newmenu *menu;
+	int i, choosable = 0;
+	if (!newmenu_front_item_is_text())
+		return 0;
+	menu = (newmenu *)window_get_data(wind);
+	if (menu->items[menu->citem].type == NM_TYPE_INPUT_MENU)
+		return 1;	// already being named
+	for (i = 0; i < menu->nitems; i++)
+		if (menu->items[i].type != NM_TYPE_TEXT)
+			choosable++;
+	return choosable == 1;
+}
+#endif
+
+// Menus and list boxes lay themselves out again for whatever screen they
+// are drawn on; other windows keep the canvas they were made with.
+int newmenu_window_lays_itself_out(window *wind)
+{
+	return window_has_handler(wind, (int (*)(window *, d_event *, void *))newmenu_handler) ||
+		window_has_handler(wind, (int (*)(window *, d_event *, void *))listbox_handler);
+}
+#endif

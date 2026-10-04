@@ -225,6 +225,12 @@ void ReadCmdArgs(void)
 
 	GameArg.GameLogTimeStamp	= FindArg("-gamelog_timestamp");
 	GameArg.GameLogSplit		= FindArg("-gamelog_split");
+
+#ifdef USE_VR
+	GameArg.VrEnable		= FindArg("-vr");
+	GameArg.VrStartLevel		= get_int_arg("-startlevel", 0);
+	GameArg.VrKit			= FindArg("-vrkit");
+#endif
 }
 
 void args_exit(void)

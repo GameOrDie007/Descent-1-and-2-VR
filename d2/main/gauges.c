@@ -29,6 +29,9 @@ COPYRIGHT 1993-1999 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "game.h"
 #include "screens.h"
 #include "gauges.h"
+#ifdef USE_VR
+#include "vr_descent.h"
+#endif
 #include "physics.h"
 #include "dxxerror.h"
 #include "menu.h"			// For the font.
@@ -2376,7 +2379,29 @@ void show_reticle(int reticle_type, int secondary_display)
 
 	x = grd_curcanv->cv_bitmap.bm_w/2;
 	y = grd_curcanv->cv_bitmap.bm_h/2;
+#ifdef USE_VR
+	// In the headset: where the aim line meets the mine, in the eyes only.
+	if (vrd_owns_reticle() && !vrd_reticle(&x, &y))
+		return;
+#endif
 	size = (grd_curcanv->cv_bitmap.bm_h / (32-(PlayerCfg.ReticleSize*4)));
+#ifdef USE_VR
+	// In the headset the crosshair is sized by angle, as it looks on a monitor,
+	// not by the eye image's height.  Put back at the end of this function.
+	short vr_saved_w = 0, vr_saved_h = 0;
+	int vr_scaled = 0;
+	if (vrd_owns_reticle())
+	{
+		int vw, vh;
+		vrd_reticle_screen(&vw, &vh);
+		vr_saved_w = grd_curscreen->sc_w;
+		vr_saved_h = grd_curscreen->sc_h;
+		grd_curscreen->sc_w = vw;
+		grd_curscreen->sc_h = vh;
+		size = vh / (32-(PlayerCfg.ReticleSize*4));
+		vr_scaled = 1;
+	}
+#endif
 
 	laser_ready = allowed_to_fire_laser();
 	missile_ready = allowed_to_fire_missile();
@@ -2507,6 +2532,13 @@ void show_reticle(int reticle_type, int secondary_display)
 			break;
 	}
 	gr_settransblend(GR_FADE_OFF, GR_BLEND_NORMAL);
+#ifdef USE_VR
+	if (vr_scaled)
+	{
+		grd_curscreen->sc_w = vr_saved_w;
+		grd_curscreen->sc_h = vr_saved_h;
+	}
+#endif
 }
 
 void show_mousefs_indicator(int mx, int my, int mz, int x, int y, int size)

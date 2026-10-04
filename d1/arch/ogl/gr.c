@@ -47,6 +47,18 @@
 #include "physfsx.h"
 #include "playsave.h"
 #include "internal.h"
+#ifdef USE_VR
+#include "vr_descent.h"
+#endif
+#ifdef USE_VR
+// On the VR panel, alpha is blended separately so that what is drawn
+// covers what is behind the panel (see vrd_panel_alpha).
+#define OGL_BLENDFUNC(s,d) do { if (vrd_panel_alpha()) glBlendFuncSeparate((s), (d), \
+	((d) == GL_ONE) ? GL_ZERO : GL_ONE, ((d) == GL_ONE) ? GL_ONE : GL_ONE_MINUS_SRC_ALPHA); \
+	else glBlendFunc((s), (d)); } while (0)
+#else
+#define OGL_BLENDFUNC(s,d) glBlendFunc((s), (d))
+#endif
 #include "render.h"
 #include "console.h"
 #include "config.h"
@@ -312,6 +324,17 @@ int ogl_init_window(int x, int y)
 	int iConfigs;
 #endif // OGLES
 
+#ifdef USE_VR
+	if (gl_initialized && vrd_holds_context())
+	{
+		// Keep this window and its GL context: the headset's session is bound
+		// to it, and SDL 1.2 makes a new context on every SetVideoMode.  The
+		// textures stay valid with it; a new filter setting is applied to
+		// them in place (reloading them mid-level can lose some).
+		ogl_vr_refilter_textures(GameCfg.TexFilt);
+		return 0;
+	}
+#endif
 	if (gl_initialized)
 		ogl_smash_texture_list_internal();//if we are or were fullscreen, changing vid mode will invalidate current textures
 
@@ -435,11 +458,19 @@ int ogl_init_window(int x, int y)
 
 int gr_check_fullscreen(void)
 {
+#ifdef USE_VR
+	if (vrd_holds_context())
+		return vrd_desktop_fills();
+#endif
 	return (sdl_video_flags & SDL_FULLSCREEN)?1:0;
 }
 
 int gr_toggle_fullscreen(void)
 {
+#ifdef USE_VR
+	if (vrd_holds_context())	// a new video mode would rebuild the GL context the headset holds;
+		return vrd_toggle_desktop();	// the window is restyled in place instead
+#endif
 	if (sdl_video_flags & SDL_FULLSCREEN)
 		sdl_video_flags &= ~SDL_FULLSCREEN;
 	else
@@ -477,7 +508,7 @@ int gr_toggle_fullscreen(void)
 		glMatrixMode(GL_MODELVIEW);
 		glLoadIdentity();//clear matrix
 		glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		OGL_BLENDFUNC(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		ogl_smash_texture_list_internal();//if we are or were fullscreen, changing vid mode will invalidate current textures
 #ifdef OGL_MERGE
 		ogl_init_prog();
@@ -505,7 +536,7 @@ static void ogl_init_state(void)
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();//clear matrix
 	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	OGL_BLENDFUNC(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	gr_palette_step_up(0,0,0);//in case its left over from in game
 
 	ogl_init_pixel_buffers(grd_curscreen->sc_w, grd_curscreen->sc_h);
@@ -634,6 +665,12 @@ int gr_set_mode(u_int32_t mode)
 
 	if (mode<=0)
 		return 0;
+#ifdef USE_VR
+	// In the headset the window keeps its size (see ogl_init_window); a new
+	// resolution is saved and takes effect on the next start.
+	if (vrd_holds_context() && grd_curscreen->sc_mode && mode != grd_curscreen->sc_mode)
+		mode = grd_curscreen->sc_mode;
+#endif
 
 	w=SM_W(mode);
 	h=SM_H(mode);
@@ -963,7 +1000,7 @@ void ogl_do_palfx(void)
 	if (do_pal_step)
 	{
 		glEnable(GL_BLEND);
-		glBlendFunc(GL_ONE,GL_ONE);
+		OGL_BLENDFUNC(GL_ONE,GL_ONE);
 	}
 	else
 		return;
@@ -974,7 +1011,7 @@ void ogl_do_palfx(void)
 	glDisableClientState(GL_VERTEX_ARRAY);
 	glDisableClientState(GL_COLOR_ARRAY);
 	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	OGL_BLENDFUNC(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
 
 int ogl_brightness_ok = 0;

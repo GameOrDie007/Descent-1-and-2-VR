@@ -103,6 +103,12 @@ endif()
 if(WIN32)
     target_link_libraries(d2x-redux PUBLIC glu32 winmm ws2_32 dbghelp)
     target_link_libraries(d2x-redux PRIVATE arch_win32)
+    if(VR)
+        # A Windows program, not a console one: no console window opens with
+        # the game or stays after it.  The entry point is our
+        # own (vr/vr_winmain.c): SDLmain's WinMain aborted at once.
+        set_target_properties(d2x-redux PROPERTIES WIN32_EXECUTABLE TRUE)
+    endif()
     target_sources(d2x-redux PRIVATE
         ${CMAKE_SOURCE_DIR}/arch/win32/d2x-rebirth.ico
         ${CMAKE_SOURCE_DIR}/arch/win32/d2x-rebirth.rc
@@ -175,4 +181,27 @@ target_include_directories(d2x-redux PUBLIC ${SDL_INCLUDE_DIR} ${PHYSFS_INCLUDE_
 target_link_libraries(d2x-redux PRIVATE 2d 3d arch_sdl iff libmve maths mem misc texmap)
 target_link_libraries(d2x-redux PUBLIC ${OPENGL_LIBRARY} ${SDL_LIBRARY} ${SDL_MIXER_LIBRARY} ${PHYSFS_LIBRARY} ${PNG_LIBRARY} ${EXTRA_LIBRARIES})
 target_sources(d2x-redux PRIVATE vers_id.c)
+if(VR)
+    # Our OpenXR layer (vr/, shared by both games) and Descent 2's side of it.
+    find_package(OpenXR CONFIG REQUIRED)
+    target_sources(d2x-redux PRIVATE ${PROJECT_SOURCE_DIR}/../vr/vr_descent.c ${PROJECT_SOURCE_DIR}/../vr/vr_options.c ${PROJECT_SOURCE_DIR}/../vr/vr_winmain.c)
+    target_include_directories(d2x-redux PRIVATE ${PROJECT_SOURCE_DIR}/../vr ${PROJECT_SOURCE_DIR}/main)	# the shared glue reads this game's headers
+    # GameOrDieXR: Game Or Die's own closed VR library (the OpenXR layer, the
+    # steady view, the hand mapping), a DLL beside the game.  Built from its
+    # source where that is present; the published source links the prebuilt
+    # one in vr/lib (it ships in every release).
+    if(EXISTS ${PROJECT_SOURCE_DIR}/../vr/vr_xr.c)
+        add_library(GameOrDieXR SHARED ${PROJECT_SOURCE_DIR}/../vr/vr_xr.c ${PROJECT_SOURCE_DIR}/../vr/vr_handmap.c)
+        target_compile_definitions(GameOrDieXR PRIVATE VRXR_BUILD)
+        target_include_directories(GameOrDieXR PRIVATE ${PROJECT_SOURCE_DIR}/../vr)
+        target_link_libraries(GameOrDieXR PRIVATE OpenXR::openxr_loader GLEW::GLEW ${OPENGL_LIBRARY})
+    else()
+        add_library(GameOrDieXR SHARED IMPORTED)
+        set_target_properties(GameOrDieXR PROPERTIES
+            IMPORTED_IMPLIB ${PROJECT_SOURCE_DIR}/../vr/lib/GameOrDieXR.lib
+            IMPORTED_LOCATION ${PROJECT_SOURCE_DIR}/../vr/lib/GameOrDieXR.dll)
+        file(COPY ${PROJECT_SOURCE_DIR}/../vr/lib/GameOrDieXR.dll DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+    endif()
+    target_link_libraries(d2x-redux PRIVATE GameOrDieXR)
+endif()
 install(TARGETS d2x-redux RUNTIME DESTINATION .)
