@@ -143,7 +143,8 @@ void vrd_after_exit(void);
 #define VRA_ENERGY_SHIELD	12	/* Descent 2 only */
 #define VRA_BANK_LEFT		13
 #define VRA_BANK_RIGHT		14
-#define VRA_COUNT		15
+#define VRA_CHANGE_VIEW		15	/* the View setting's next choice (vrd_cycle_view) */
+#define VRA_COUNT		16
 
 #define VRD_FAMILY_TOUCH	0
 #define VRD_FAMILY_INDEX	1
@@ -160,9 +161,39 @@ typedef struct vrd_settings {
 	int show_advanced;		/* the game's Options shows its advanced rows */
 	int play_style;			/* -1 not chosen yet, 0 Modern, 1 Classic */
 	int ship_bob;			/* the ship's own gentle up-and-down drift */
+	int swivel;			/* swivel chair: turning your body turns the ship */
+	int invert_look;		/* look stick up dips the nose (flight-sim style) */
+	int cockpit;			/* 0 none, 1 Modern (built round the player), 2 Classic (the game's own picture) */
+	int classic_follow;		/* the Classic cockpit follows the head (1) or stays with the ship (0) */
+	int classic_size;		/* the Classic cockpit's size, 0..6: 70% to 130% of the view */
+	int classic_height;		/* the Classic cockpit's height, 0..8: 4 the default, 1.5 degrees a step */
+	int third_person;		/* 0 the cockpit, 1 behind the ship (near), 2 behind it (far) */
+	int book_float;			/* the game manual floats in front instead of in the off hand */
 	int bind[VRD_FAMILIES][VRB_COUNT];	/* VRA_* per button, per controller family */
 } vrd_settings;
 extern vrd_settings VrSet;
+
+/* The cockpit round the player, drawn in each eye before the crosshair
+ * (gamerend.c); vr_cockpit.c.  vrd_cockpit_view gives it this eye and the
+ * Swivel chair's turn; 0 outside an eye. */
+void vrd_draw_cockpit(void);
+/* 1 = this eye is the third-person camera behind the ship, so the engine
+ * draws the player's own ship (object.c's render_object). */
+int vrd_show_own_ship(void);
+/* 1 = the cockpit is on and the player is in the ship (not dead, not an
+ * outside camera). */
+int vrd_cockpit_wanted(void);
+/* 1 while the gauge picture is drawn: its bitmaps are drawn unfiltered. */
+int vrd_sharp_pixels(void);
+/* The View setting: no cockpit, Modern, Classic, behind near, behind far. */
+void vrd_cycle_view(void);
+const char *vrd_view_name(void);
+/* The gauge picture the cockpit shows: the engine draws its cockpit gauges
+ * into it between these, once a frame (vr_descent.c). */
+int vrd_cockpit_gauges_begin(int *w, int *h);
+void vrd_cockpit_gauges_end(void);
+struct vrxr_eye;
+int vrd_cockpit_view(struct vrxr_eye *eye, float *swivel);
 
 /* 1 = the ship drifts up and down as the stock game has it (controls.c). */
 int vrd_ship_bob(void);
@@ -188,6 +219,12 @@ int vrd_family_buttons(int family);		/* how many VRB_* it has */
 
 /* VR Options: the pause menu's row and Options' first row open it. */
 void vrd_options_menu(void);
+/* The game manual (VR Options, Game Manual): a book in the off hand, opened
+ * over the menu.  0 = Setup has not made one.  While it shows, the menu
+ * panel and the menu's own drawing stand aside. */
+int vrd_book_available(void);
+int vrd_book_open(void);
+int vrd_book_showing(void);
 void vrd_recenter(void);
 /* A line in the VR log from engine code (once, not every frame). */
 void vrd_note(const char *what);

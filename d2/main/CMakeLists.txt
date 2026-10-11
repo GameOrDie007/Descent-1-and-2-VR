@@ -1,4 +1,11 @@
-add_executable (d2x-redux
+if(ANDROID)
+    # Android: the game is the libmain.so that SDL's Java activity loads.
+    add_library(d2x-redux SHARED)
+    set_target_properties(d2x-redux PROPERTIES OUTPUT_NAME main_d2)
+else()
+    add_executable(d2x-redux)
+endif()
+target_sources(d2x-redux PRIVATE
     ai.c
     ai2.c
     aipath.c
@@ -69,7 +76,7 @@ add_executable (d2x-redux
     weapon.c
     )
 
-include_directories(${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/arch/include)
+include_directories(${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/arch/include)
 
 target_compile_definitions(d2x-redux PUBLIC
     DXX_VERSION_MAJORi=${PROJECT_VERSION_MAJOR}
@@ -84,7 +91,11 @@ if(NOT "${SIZEOF_SSIZE_T}" STREQUAL "")
 endif()
 
 if(OPENGL)
-    target_link_libraries(d2x-redux PRIVATE arch_ogl xmodel)
+    if(ANDROID)
+        target_link_libraries(d2x-redux PRIVATE arch_ogl)
+    else()
+        target_link_libraries(d2x-redux PRIVATE arch_ogl xmodel)
+    endif()
 endif()
 
 if(SDLMIXER)
@@ -110,8 +121,8 @@ if(WIN32)
         set_target_properties(d2x-redux PROPERTIES WIN32_EXECUTABLE TRUE)
     endif()
     target_sources(d2x-redux PRIVATE
-        ${CMAKE_SOURCE_DIR}/arch/win32/d2x-rebirth.ico
-        ${CMAKE_SOURCE_DIR}/arch/win32/d2x-rebirth.rc
+        ${PROJECT_SOURCE_DIR}/arch/win32/d2x-rebirth.ico
+        ${PROJECT_SOURCE_DIR}/arch/win32/d2x-rebirth.rc
         )
     set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} /NODEFAULTLIB:msvcrt.lib")
     if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
@@ -167,12 +178,19 @@ if(NOT WIN32)
     list(APPEND EXTRA_LIBRARIES "m")
 endif()
 
+if(ANDROID)
+    # SDL (sdl12-compat) and PhysFS come from platform/quest/jni; GL is the
+    # system's OpenGL ES 1.x.
+    set(OPENGL_LIBRARY GLESv1_CM)
+    list(APPEND EXTRA_LIBRARIES EGL log android dl)
+else()
 find_package(SDL 1.2 REQUIRED)
 find_package(PhysFS REQUIRED)
 if(OPENGL)
     find_package(OpenGL REQUIRED)
     find_package(GLEW REQUIRED)
     list(APPEND EXTRA_LIBRARIES GLEW::GLEW)
+endif()
 endif()
 if(PNG)
     find_package(PNG REQUIRED)
@@ -181,20 +199,41 @@ target_include_directories(d2x-redux PUBLIC ${SDL_INCLUDE_DIR} ${PHYSFS_INCLUDE_
 target_link_libraries(d2x-redux PRIVATE 2d 3d arch_sdl iff libmve maths mem misc texmap)
 target_link_libraries(d2x-redux PUBLIC ${OPENGL_LIBRARY} ${SDL_LIBRARY} ${SDL_MIXER_LIBRARY} ${PHYSFS_LIBRARY} ${PNG_LIBRARY} ${EXTRA_LIBRARIES})
 target_sources(d2x-redux PRIVATE vers_id.c)
-if(VR)
+if(VR AND ANDROID)
+    # Standalone headsets: the Android layer and the Khronos Android loader
+    # (OPENXR_ANDROID_* come from platform/quest/jni).
+    target_sources(d2x-redux PRIVATE ${PROJECT_SOURCE_DIR}/../vr/vr_descent.c ${PROJECT_SOURCE_DIR}/../vr/vr_options.c ${PROJECT_SOURCE_DIR}/../vr/vr_cockpit.c)
+    target_include_directories(d2x-redux PRIVATE ${PROJECT_SOURCE_DIR}/../vr ${PROJECT_SOURCE_DIR}/main)
+    # GameOrDieXR for Android: built from its source where that is present;
+    # the published source links the prebuilt one in vr/lib/android.
+    if(EXISTS ${PROJECT_SOURCE_DIR}/../vr/vr_xr_android.c)
+        # The Game Tome book too (gt_book.c as on PC, on GLES 1.1 and POSIX
+        # through vr/android_compat, which only this library sees).
+        add_library(GameOrDieXR SHARED ${PROJECT_SOURCE_DIR}/../vr/vr_xr_android.c ${PROJECT_SOURCE_DIR}/../vr/vr_handmap.c
+            ${PROJECT_SOURCE_DIR}/../vr/vr_book_android.c ${PROJECT_SOURCE_DIR}/../vr/gt_book.c ${PROJECT_SOURCE_DIR}/../vr/android_compat/gt_gles1.c)
+        target_compile_definitions(GameOrDieXR PRIVATE VRXR_BUILD GTB_GL_HEADER="gt_gles1.h")
+        target_include_directories(GameOrDieXR PRIVATE ${PROJECT_SOURCE_DIR}/../vr ${OPENXR_ANDROID_INCLUDE} ${PROJECT_SOURCE_DIR}/../vr/android_compat)
+        target_link_libraries(GameOrDieXR PRIVATE ${OPENXR_ANDROID_LOADER} EGL GLESv3 GLESv1_CM OpenSLES log dl)
+    else()
+        add_library(GameOrDieXR SHARED IMPORTED GLOBAL)
+        set_target_properties(GameOrDieXR PROPERTIES
+            IMPORTED_LOCATION ${PROJECT_SOURCE_DIR}/../vr/lib/android/${ANDROID_ABI}/libGameOrDieXR.so)
+    endif()
+    target_link_libraries(d2x-redux PRIVATE GameOrDieXR)
+elseif(VR)
     # Our OpenXR layer (vr/, shared by both games) and Descent 2's side of it.
     find_package(OpenXR CONFIG REQUIRED)
-    target_sources(d2x-redux PRIVATE ${PROJECT_SOURCE_DIR}/../vr/vr_descent.c ${PROJECT_SOURCE_DIR}/../vr/vr_options.c ${PROJECT_SOURCE_DIR}/../vr/vr_winmain.c)
+    target_sources(d2x-redux PRIVATE ${PROJECT_SOURCE_DIR}/../vr/vr_descent.c ${PROJECT_SOURCE_DIR}/../vr/vr_options.c ${PROJECT_SOURCE_DIR}/../vr/vr_cockpit.c ${PROJECT_SOURCE_DIR}/../vr/vr_winmain.c)
     target_include_directories(d2x-redux PRIVATE ${PROJECT_SOURCE_DIR}/../vr ${PROJECT_SOURCE_DIR}/main)	# the shared glue reads this game's headers
     # GameOrDieXR: Game Or Die's own closed VR library (the OpenXR layer, the
     # steady view, the hand mapping), a DLL beside the game.  Built from its
     # source where that is present; the published source links the prebuilt
     # one in vr/lib (it ships in every release).
     if(EXISTS ${PROJECT_SOURCE_DIR}/../vr/vr_xr.c)
-        add_library(GameOrDieXR SHARED ${PROJECT_SOURCE_DIR}/../vr/vr_xr.c ${PROJECT_SOURCE_DIR}/../vr/vr_handmap.c)
+        add_library(GameOrDieXR SHARED ${PROJECT_SOURCE_DIR}/../vr/vr_xr.c ${PROJECT_SOURCE_DIR}/../vr/vr_handmap.c ${PROJECT_SOURCE_DIR}/../vr/vr_book.c ${PROJECT_SOURCE_DIR}/../vr/gt_book.c)
         target_compile_definitions(GameOrDieXR PRIVATE VRXR_BUILD)
         target_include_directories(GameOrDieXR PRIVATE ${PROJECT_SOURCE_DIR}/../vr)
-        target_link_libraries(GameOrDieXR PRIVATE OpenXR::openxr_loader GLEW::GLEW ${OPENGL_LIBRARY})
+        target_link_libraries(GameOrDieXR PRIVATE OpenXR::openxr_loader GLEW::GLEW ${OPENGL_LIBRARY} winmm)
     else()
         add_library(GameOrDieXR SHARED IMPORTED)
         set_target_properties(GameOrDieXR PROPERTIES

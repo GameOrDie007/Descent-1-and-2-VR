@@ -532,7 +532,9 @@ int main(int argc, char *argv[])
 	}
 
 	WriteConfigFile();
-	show_order_form();
+#ifndef __ANDROID__
+	show_order_form();	// standalone: nothing is on view once the headset session has ended
+#endif
 
 	con_printf( CON_DEBUG, "\nCleanup...\n" );
 	close_game();
@@ -546,5 +548,11 @@ int main(int argc, char *argv[])
 	PHYSFSX_removeArchiveContent();
 	reset_observatory_stats();
 
+#ifdef __ANDROID__
+	// Standalone: end the process here.  Android would keep it, the music
+	// playing over a black headset.  _exit, not exit: the libraries' own
+	// teardown raced the app's main thread on the Steam Frame.
+	_exit(0);
+#endif
 	return(0);		//presumably successful exit
 }

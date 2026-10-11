@@ -1,0 +1,9 @@
+# built or machine-local
+app/libs/
+app/build/
+build/
+.gradle/
+local.properties
+app/src/main/assets/descent.sf2*
+app/src/main/assets/vrsplash.png
+app/src/main/assets/picker/

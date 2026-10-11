@@ -60,6 +60,8 @@
 #include "console.h"
 #include "config.h"
 #include "render.h"
+#include "physfsx.h"
+#include "gauges.h"		/* render_gauges, for the cockpit's screens */
 #include "pngfile.h"		/* the splash */
 #include "gameseg.h"
 /* Last: it brings in windows.h, and a header above brings in winsock2.h,
@@ -94,6 +96,7 @@ static int s_centered;		/* the first recenter has been asked for */
 static int s_kind;		/* this frame: VRD_FLAT, VRD_EYES or VRD_PANEL */
 static int s_eye = -1;		/* the eye being drawn, or -1 */
 static int s_panel = -1;	/* the panel pass being drawn, or -1 */
+static int s_gauge_pass;	/* drawing the cockpit's gauge picture */
 static int s_skip_briefing;
 static vrxr_eye s_cur;
 static float s_tx = 1.0f, s_ty = 1.0f;	/* the eye's widest tangent, each axis */
@@ -128,7 +131,48 @@ static int s_ptr_on, s_ptr_x, s_ptr_y, s_ptr_down, s_ptr_press_x, s_ptr_press_y;
  * z ahead; metres for the origin), this frame. */
 static int s_ctl_ok;
 static float s_ctl_dir[3], s_ctl_pos[3];
+
+/* Swivel chair: how far the ship has been turned by the body, as a yaw in
+ * tracking space (radians, right positive).  Everything read from the
+ * tracking space (eyes, hands, sound, panels) is turned back by it, so the
+ * cockpit turns with the player. */
+static float s_swivel;
+static int s_swivel_live;	/* tracking the head this frame (not frozen) */
+static int s_swivel_settle;	/* frames to absorb after a recenter */
+static float s_swivel_turned;	/* how far it has turned the ship since the last status line, radians */
+static float s_swivel_head;	/* the head's heading last frame, for this frame's turn */
+static int s_swivel_resync;	/* the heading was unreadable: pick it up again without turning */
+
+/* A tracking-space vector into the swiveled cockpit's frame. */
+static void swivel_v(float v[3])
+{
+	const float c = cosf(s_swivel), s = sinf(s_swivel);
+	const float x = v[0], z = v[2];
+	v[0] = c * x + s * z;
+	v[2] = -s * x + c * z;
+}
+
+/* A tracking-space orientation into the swiveled cockpit's frame. */
+static void swivel_q(const float in[4], float out[4])
+{
+	/* (0, sin(a/2), 0, cos(a/2)) * in, a = s_swivel about +Y */
+	const float sy = sinf(s_swivel * 0.5f), cw = cosf(s_swivel * 0.5f);
+	out[0] = cw * in[0] + sy * in[2];
+	out[1] = cw * in[1] + sy * in[3];
+	out[2] = cw * in[2] - sy * in[0];
+	out[3] = cw * in[3] - sy * in[1];
+}
 static int s_rumbles;
+/* The game manual: eyes drawn this frame (the book goes into each), and the
+ * time of the last book frame. */
+static int s_eyes_drawn;
+static fix64 s_book_last;
+#define VRD_BOOK_DIR "tome"	/* beside the engine: Setup makes it from the game's manual */
+/* A desk test of the book (GOD_VR_BOOK_TEST=<seconds> in the environment, never
+ * set for players): open it on the first frame, close it after that long, and
+ * quit the way Switch Game does, so the session ends cleanly. */
+static int s_book_test = -1;
+static fix64 s_book_test_end;
 static fix s_last_shields = -1;
 static int s_was_dead;
 /* A monitor-sized window drawn on the panel, scaled up around its draw. */
@@ -158,6 +202,7 @@ static struct {
 } s_saved;
 
 extern void game_draw_hud_stuff(void);
+extern void update_cockpits(void);
 #ifdef VRD_DESCENT2
 extern void show_extra_views(void);
 #define VRD_GAME_NAME	"Descent 2 (Descent 1 & 2 VR)"
@@ -177,8 +222,8 @@ void vrd_startup(void)
 		return;		/* VR off: not even a log file */
 	vrxr_log_start(VRD_LOG_TITLE);
 	vrd_settings_load();
-	vrxr_log("VR: settings: Leftorium %d, swap sticks %d, aim with the %s, vibration %d, observer view %s",
-		VrSet.leftorium, VrSet.swap_sticks, VrSet.aim_controller ? "controller" : "ship",
+	vrxr_log("VR: settings: Leftorium %d, swap sticks %d, invert look %d, aim with the %s, vibration %d, observer view %s",
+		VrSet.leftorium, VrSet.swap_sticks, VrSet.invert_look, VrSet.aim_controller ? "controller" : "ship",
 		VrSet.rumble, VrSet.desktop_view ? "steady view" : "left eye");
 	if (vrxr_connect(VRD_GAME_NAME)) {
 		int w = 0, h = 0;
@@ -217,6 +262,7 @@ int vrd_desktop_fills(void)
 void vrd_shutdown(void)
 {
 	if (s_connected || s_up) {
+		vrxr_book_close();
 		vrd_settings_save();
 		vrxr_log("VR: the game is closing; ending the session");
 		vrxr_shutdown();
@@ -318,6 +364,8 @@ static void read_controller_aim(void)
 	s_ctl_ok = 0;
 	if (!VrSet.aim_controller || !vrxr_hand_aim(hand, q, pos))
 		return;
+	swivel_q(q, q);
+	swivel_v(pos);
 	x = q[0]; y = q[1]; z = q[2]; w = q[3];
 	s_ctl_dir[0] = -2.0f * (x * z + y * w);
 	s_ctl_dir[1] = -2.0f * (y * z - x * w);
@@ -334,6 +382,7 @@ static void read_controller_aim(void)
  * frame begun inside a frame draws nothing and puts an eye's swapchain out
  * of step.  The outer code then finds no pass and no frame open and does
  * nothing more. */
+static void screen_push(int w, int h, fix aspect);
 static void screen_pop(void);
 
 static void finish_open_frame(void)
@@ -358,6 +407,32 @@ static void finish_open_frame(void)
 	}
 	vrxr_frame_end();
 	s_kind = VRD_FLAT;
+}
+
+/* The cockpit's screens: the engine's own full-cockpit gauges, drawn once a
+ * frame into the picture the cockpit lays over its console (vr_cockpit.c).
+ * Drawn the panel's way, so their alpha says where they are. */
+static void cockpit_gauges(void)
+{
+	int w, h, mode;
+	GLint src = GL_SRC_ALPHA, dst = GL_ONE_MINUS_SRC_ALPHA;
+	if (!vrd_cockpit_wanted() || !vrd_cockpit_gauges_begin(&w, &h))
+		return;
+	screen_push(w, h, fixdiv(w * 3, h * 4));	/* the flat cockpit's 4:3 */
+	glGetIntegerv(GL_BLEND_SRC_RGB, &src);
+	glGetIntegerv(GL_BLEND_DST_RGB, &dst);
+	glBlendFuncSeparate((GLenum)src, (GLenum)dst, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	s_gauge_pass = 1;
+	mode = PlayerCfg.CurrentCockpitMode;
+	PlayerCfg.CurrentCockpitMode = CM_FULL_COCKPIT;
+	if (VrSet.cockpit == 2)
+		update_cockpits();	/* Classic: the game's own cockpit picture under the gauges */
+	render_gauges();
+	PlayerCfg.CurrentCockpitMode = mode;
+	s_gauge_pass = 0;
+	glBlendFunc((GLenum)src, (GLenum)dst);
+	screen_pop();
+	vrd_cockpit_gauges_end();
 }
 
 void vrd_frame_begin(void)
@@ -393,14 +468,27 @@ void vrd_frame_begin(void)
 			s_centered = 1;
 		}
 		s_kind = game_visible() ? VRD_EYES : VRD_PANEL;
+		if (s_book_test < 0) {
+			const char *e = getenv("GOD_VR_BOOK_TEST");
+			s_book_test = e ? atoi(e) : 0;
+			if (s_book_test > 0) {
+				vrxr_log("VR: book test: opening the game manual for %d s (%s)", s_book_test,
+					vrd_book_open() ? "opened" : "NO BOOK");
+				s_book_test_end = timer_query() + i2f(s_book_test);
+			}
+		}
 		if (s_splash && s_kind != VRD_PANEL)
 			splash_end("the game is showing");
 		s_aim_valid = 0;
 		vrxr_set_mirror_steady(VrSet.desktop_view == 1);
 		read_controller_aim();
-		/* The monitor shows the left eye in flight, the panel otherwise. */
-		vrxr_set_mirror(s_kind == VRD_EYES ? 0 : VRXR_MIRROR_PANEL,
+		/* The monitor shows the left eye in flight, the panel otherwise; with
+		 * the game manual open, the eye that holds it. */
+		vrxr_set_mirror(s_kind == VRD_EYES || vrxr_book_is_open() ? 0 : VRXR_MIRROR_PANEL,
 			grd_curscreen->sc_w, grd_curscreen->sc_h);
+		s_eyes_drawn = 0;
+		if (s_kind == VRD_EYES)
+			cockpit_gauges();
 	}
 }
 
@@ -434,6 +522,10 @@ static void status_line(void)
 			VrSet.aim_controller ? (s_ctl_ok ? "controller (tracked)" : "controller (not tracked: ship)") : "ship",
 			s_rumbles, s_photo ? "; photo mode" : "", s_kb ? "; keyboard up" : "");
 		s_rumbles = 0;
+		if (VrSet.swivel) {
+			vrxr_log("VR: swivel chair turned the ship %.0f deg in the last 10 s", s_swivel_turned * 57.29578f);
+			s_swivel_turned = 0.0f;
+		}
 		{
 			/* Where the frames' time went: the headroom left for 90 Hz, or 120. */
 			vrxr_frame_stats st;
@@ -458,6 +550,8 @@ static void status_line(void)
 void vrd_frame_end(void)
 {
 	if (s_up) {
+		if (s_eyes_drawn < 2 && vrxr_frame_is_open() && vrxr_book_is_open())
+			vrxr_book_draw_eyes();	/* the main menu: no game view, the book alone */
 		s_frames[s_kind]++;
 		vrxr_frame_end();	/* every frame begun is ended */
 		status_line();
@@ -551,14 +645,26 @@ void vrd_eye_end(int eye)
 {
 	if (s_eye != eye)
 		return;
+	if (vrxr_book_is_open())
+		vrxr_book_draw(&s_cur);	/* the game manual, over the paused game */
 	vrxr_eye_end(eye);
 	screen_pop();
 	s_eye = -1;
+	s_eyes_drawn++;
 }
 
 int vrd_in_eye_pass(void)
 {
 	return s_eye >= 0;
+}
+
+int vrd_cockpit_view(struct vrxr_eye *eye, float *swivel)
+{
+	if (s_eye < 0 || !vrd_eye_active())
+		return 0;
+	*eye = s_cur;
+	*swivel = s_swivel;
+	return 1;
 }
 
 int vrd_eye_active(void)
@@ -606,6 +712,8 @@ int vrd_panel_begin(int what)
 	int w = 0, h = 0;
 	if (s_kind == VRD_FLAT || s_eye >= 0 || s_panel >= 0)
 		return 0;
+	if (vrxr_book_is_open())
+		return 0;	/* the game manual is open: no menu over it */
 	if (what == VRD_PANEL_HUD && !game_visible())
 		return 0;	/* no game, no HUD */
 	if (what == VRD_PANEL_MENU && s_photo && game_visible())
@@ -663,7 +771,15 @@ void vrd_panel_end(void)
 		wm = VrSet.menu_size / 100.0f;
 		pos[0] = 0.0f; pos[1] = 0.0f; pos[2] = -VrSet.menu_dist / 100.0f;
 	}
-	vrxr_panel_place(facing, pos, wm, wm * (float)h / (float)w);
+	{
+		/* Turned with the swiveled cockpit (no turn without Swivel chair). */
+		float f[4], p[3];
+		f[0] = facing[0]; f[1] = -sinf(s_swivel * 0.5f); f[2] = facing[2]; f[3] = cosf(s_swivel * 0.5f);
+		p[0] = pos[0] * cosf(s_swivel) - pos[2] * sinf(s_swivel);
+		p[1] = pos[1];
+		p[2] = pos[0] * sinf(s_swivel) + pos[2] * cosf(s_swivel);
+		vrxr_panel_place(f, p, wm, wm * (float)h / (float)w);
+	}
 	screen_pop();
 	s_panel = -1;
 }
@@ -761,11 +877,16 @@ void vrd_panel_overlay(void)
 	}
 }
 
+int vrd_sharp_pixels(void)
+{
+	return s_gauge_pass;
+}
+
 int vrd_panel_alpha(void)
 {
 	/* Drawing on the panel, which is composited over the world by its alpha:
 	 * alpha must accumulate as "over", not be scaled by itself. */
-	return s_panel >= 0;
+	return s_panel >= 0 || s_gauge_pass;
 }
 
 int vrd_hud_pass(void)
@@ -778,7 +899,15 @@ void vrd_draw_hud(void)
 	if (s_panel != VRD_PANEL_HUD)
 		return;
 	gr_set_current_canvas(&Screen_3d_window);
-	game_draw_hud_stuff();	/* its crosshair stands down: see vrd_reticle */
+	if (vrd_cockpit_wanted()) {
+		/* The gauges are in the cockpit: the HUD shows what the flat
+		 * cockpit's own screen does (messages and the like). */
+		const int mode = PlayerCfg.CurrentCockpitMode;
+		PlayerCfg.CurrentCockpitMode = CM_FULL_COCKPIT;
+		game_draw_hud_stuff();
+		PlayerCfg.CurrentCockpitMode = mode;
+	} else
+		game_draw_hud_stuff();	/* its crosshair stands down: see vrd_reticle */
 #ifdef VRD_DESCENT2
 	gr_set_current_canvas(NULL);
 	show_extra_views();	/* rear, missile, buddy: small pictures on the panel */
@@ -834,13 +963,114 @@ static void find_aim_point(const vms_vector *base_pos, const vms_matrix *base_or
 	s_aim_valid = 1;
 }
 
+/* --- third person ------------------------------------------------------------------
+ * The camera behind the ship, as Forsaken VR's pull-back view: it trails its
+ * place behind and above the ship a little, so the ship banks and swings in
+ * the frame instead of being stuck to the view; it turns after the ship the
+ * same way; and it stops short of the mine's walls, so it never looks out of
+ * the level.  The head moves on top of it as in the cockpit, and the shots
+ * still leave from the ship (the crosshair is where they go). */
+#define CHASE_BACK_NEAR	15.0f	/* mine units (metres here) behind ... */
+#define CHASE_UP_NEAR	4.0f	/* ... and above the ship */
+#define CHASE_BACK_FAR	26.0f
+#define CHASE_UP_FAR	6.5f
+#define CHASE_WALL_GAP	(F1_0 * 2)	/* the camera's radius against the walls */
+static vms_vector s_chase_pos;
+static vms_matrix s_chase_orient;
+static int s_chase_ready;
+
+static int third_person_now(void)
+{
+	return VrSet.third_person > 0 && s_eye >= 0 && vrd_eye_active() && ConsoleObject &&
+		Viewer == ConsoleObject && !Rear_view && !Player_is_dead;
+}
+
+int vrd_show_own_ship(void)
+{
+	return third_person_now();
+}
+
+/* From the ship towards `want`, stopped where the camera would meet a wall. */
+static void chase_clamp(vms_vector *want, const vms_vector *ship_pos)
+{
+	fvi_query fq;
+	fvi_info hit;
+	int r;
+	memset(&fq, 0, sizeof(fq));
+	fq.p0 = (vms_vector *)ship_pos;
+	fq.p1 = want;
+	fq.startseg = ConsoleObject->segnum;
+	fq.rad = CHASE_WALL_GAP;
+	fq.thisobjnum = ConsoleObject - Objects;
+	fq.ignore_obj_list = NULL;
+	fq.flags = 0;			/* walls only, not robots or shots */
+	memset(&hit, 0, sizeof(hit));
+	r = find_vector_intersection(&fq, &hit);
+	if (r == HIT_BAD_P0)
+		*want = *ship_pos;
+	else if (r != HIT_NONE)
+		*want = hit.hit_pnt;
+}
+
+/* Once a frame, on the first eye: where the camera is now. */
+static void chase_update(const vms_vector *ship_pos, const vms_matrix *ship_orient)
+{
+	const float back = VrSet.third_person == 2 ? CHASE_BACK_FAR : CHASE_BACK_NEAR;
+	const float up = VrSet.third_person == 2 ? CHASE_UP_FAR : CHASE_UP_NEAR;
+	const float dt = f2fl(FrameTime) > 0.1f ? 0.1f : f2fl(FrameTime);
+	vms_vector ideal = *ship_pos, f, u;
+	vm_vec_scale_add2(&ideal, (vms_vector *)&ship_orient->fvec, -fl2f(back));
+	vm_vec_scale_add2(&ideal, (vms_vector *)&ship_orient->uvec, fl2f(up));
+	chase_clamp(&ideal, ship_pos);
+	if (!s_chase_ready || vm_vec_dist(&ideal, &s_chase_pos) > F1_0 * 80) {
+		/* the first frame, a new level, a teleport: straight there */
+		s_chase_pos = ideal;
+		s_chase_orient = *ship_orient;
+		s_chase_ready = 1;
+		return;
+	}
+	{
+		/* trailing: about a tenth of a second behind, whatever the frame rate */
+		const float kp = 1.0f - expf(-dt / 0.10f), ko = 1.0f - expf(-dt / 0.08f);
+		vms_vector d;
+		vm_vec_sub(&d, &ideal, &s_chase_pos);
+		vm_vec_scale_add2(&s_chase_pos, &d, fl2f(kp));
+		chase_clamp(&s_chase_pos, ship_pos);	/* a sharp turn must not take it through a wall */
+		f = s_chase_orient.fvec;
+		u = s_chase_orient.uvec;
+		vm_vec_sub(&d, (vms_vector *)&ship_orient->fvec, &f);
+		vm_vec_scale_add2(&f, &d, fl2f(ko));
+		vm_vec_sub(&d, (vms_vector *)&ship_orient->uvec, &u);
+		vm_vec_scale_add2(&u, &d, fl2f(ko));
+		vm_vec_normalize(&f);
+		vm_vector_2_matrix(&s_chase_orient, &f, &u, NULL);
+	}
+}
+
 void vrd_eye_view(vms_vector *eye_pos, vms_matrix *eye_orient,
 	const vms_vector *base_pos, const vms_matrix *base_orient)
 {
-	const float x = s_cur.orient[0], y = s_cur.orient[1], z = s_cur.orient[2], w = s_cur.orient[3];
+	/* Where the eyes ride: the ship, or the camera behind it. */
+	const vms_vector *cam_pos = base_pos;
+	const vms_matrix *cam_orient = base_orient;
+	float eq[4], ep[3];
+	float x, y, z, w;
 	float R[3][3];
 	vms_matrix headm;
 	float d[3];
+
+	if (third_person_now()) {
+		if (!vrd_repeat_eye())
+			chase_update(base_pos, base_orient);
+		cam_pos = &s_chase_pos;
+		cam_orient = &s_chase_orient;
+	} else
+		s_chase_ready = 0;
+
+	swivel_q(s_cur.orient, eq);
+	ep[0] = s_cur.pos[0]; ep[1] = s_cur.pos[1]; ep[2] = s_cur.pos[2];
+	swivel_v(ep);
+	x = eq[0]; y = eq[1]; z = eq[2]; w = eq[3];
 
 	/* The head's rotation in tracking space (right-handed, Y up, -Z ahead). */
 	R[0][0] = 1.0f - 2.0f * (y * y + z * z);
@@ -860,16 +1090,16 @@ void vrd_eye_view(vms_vector *eye_pos, vms_matrix *eye_orient,
 	headm.fvec.x = fl2f(-R[0][2]); headm.fvec.y = fl2f(-R[1][2]); headm.fvec.z = fl2f(R[2][2]);
 
 	/* Onto the ship: head axes, expressed in the ship's frame, into the mine. */
-	vm_matrix_x_matrix(eye_orient, (vms_matrix *)base_orient, &headm);
+	vm_matrix_x_matrix(eye_orient, (vms_matrix *)cam_orient, &headm);
 
 	/* The eye's position: the tracking-space offset, in the ship's frame. */
-	d[0] = s_cur.pos[0] * VRD_UNITS_PER_METRE;
-	d[1] = s_cur.pos[1] * VRD_UNITS_PER_METRE;
-	d[2] = -s_cur.pos[2] * VRD_UNITS_PER_METRE;
-	*eye_pos = *base_pos;
-	vm_vec_scale_add2(eye_pos, (vms_vector *)&base_orient->rvec, fl2f(d[0]));
-	vm_vec_scale_add2(eye_pos, (vms_vector *)&base_orient->uvec, fl2f(d[1]));
-	vm_vec_scale_add2(eye_pos, (vms_vector *)&base_orient->fvec, fl2f(d[2]));
+	d[0] = ep[0] * VRD_UNITS_PER_METRE;
+	d[1] = ep[1] * VRD_UNITS_PER_METRE;
+	d[2] = -ep[2] * VRD_UNITS_PER_METRE;
+	*eye_pos = *cam_pos;
+	vm_vec_scale_add2(eye_pos, (vms_vector *)&cam_orient->rvec, fl2f(d[0]));
+	vm_vec_scale_add2(eye_pos, (vms_vector *)&cam_orient->uvec, fl2f(d[1]));
+	vm_vec_scale_add2(eye_pos, (vms_vector *)&cam_orient->fvec, fl2f(d[2]));
 
 	/* The crosshair in this eye: the aim point, seen from this eye.  Only
 	 * from a viewer inside the mine: the flythrough's camera outside has no
@@ -912,6 +1142,7 @@ vms_matrix *vrd_listener_orient(vms_matrix *ship)
 	vms_matrix headm;
 	if (!vrd_paced() || !ship || !vrxr_head(q, pos))
 		return ship;
+	swivel_q(q, q);
 	x = q[0]; y = q[1]; z = q[2]; w = q[3];
 	headm.rvec.x = fl2f(1.0f - 2.0f * (y * y + z * z));
 	headm.rvec.y = fl2f(2.0f * (x * y + z * w));
@@ -1114,6 +1345,8 @@ static int pointer_on_panel(int *px, int *py)
 	d[0] = -2.0f * (q[0] * q[2] + q[1] * q[3]);
 	d[1] = -2.0f * (q[1] * q[2] - q[0] * q[3]);
 	d[2] = -(1.0f - 2.0f * (q[0] * q[0] + q[1] * q[1]));
+	swivel_v(o);
+	swivel_v(d);
 	dist = VrSet.menu_dist / 100.0f;
 	wm = VrSet.menu_size / 100.0f;
 	hm = wm * (float)ph / (float)pw;
@@ -1304,6 +1537,10 @@ static void apply_actions(const int held[VRB_COUNT], const int edge[VRB_COUNT])
 	if (act_edge[VRA_REAR_VIEW]) Controls.rear_view_count++;
 	if (act_edge[VRA_AUTOMAP]) Controls.automap_count++;
 	if (act_edge[VRA_RECENTER]) vrd_recenter();
+	if (act_edge[VRA_CHANGE_VIEW]) {
+		vrd_cycle_view();
+		vrxr_log("VR: view: %s", vrd_view_name());
+	}
 #ifdef VRD_DESCENT2
 	set_bit(&Controls.afterburner_state, act_held[VRA_AFTERBURNER]);
 	set_bit(&Controls.energy_to_shield_state, act_held[VRA_ENERGY_SHIELD]);
@@ -1394,6 +1631,80 @@ vms_vector vrd_shot_dir(vms_vector ship_fvec)
 	return d;
 }
 
+/* Swivel chair: the head's turn left and right becomes the ship's, so the
+ * view never turns without the body turning.  Only while the game itself is
+ * in front; in a menu or photo mode the head looks round freely, and the
+ * difference is absorbed when play resumes, as a recenter would. */
+void check_and_fix_matrix(vms_matrix *m);	/* physics.c, declared where used as the engine does */
+
+static void swivel_frame(void)
+{
+	float q[4], p[3], fx, fz, h, d, flat, w;
+	if (!VrSet.swivel) {
+		s_swivel = 0.0f;
+		s_swivel_live = 0;
+		return;
+	}
+	if (!vrxr_head(q, p))
+		return;
+	/* The head's forward (-Z) in tracking space, flattened. */
+	fx = -2.0f * (q[0] * q[2] + q[1] * q[3]);
+	fz = -(1.0f - 2.0f * (q[0] * q[0] + q[1] * q[1]));
+	flat = sqrtf(fx * fx + fz * fz);	/* cos of how far up or down the head looks */
+	if (flat < 0.2f) {
+		s_swivel_resync = 1;	/* looking straight up or down: no yaw to read */
+		return;
+	}
+	h = atan2f(fx, -fz);	/* right positive */
+	/* A heading read looking steeply up or down swings with a small nod or
+	 * tilt, so the swivel eases out between 45 and 60 degrees of elevation
+	 * (flat 0.707 to 0.5) and stops beyond: the head just looks around. */
+	w = (flat - 0.5f) / (0.7071f - 0.5f);
+	if (w < 0.0f) w = 0.0f;
+	if (w > 1.0f) w = 1.0f;
+	if (!game_in_front() || Player_is_dead || !ConsoleObject) {
+		s_swivel_live = 0;
+		return;
+	}
+	if (!s_swivel_live || s_swivel_settle > 0) {
+		s_swivel = h;
+		s_swivel_head = h;
+		s_swivel_resync = 0;
+		s_swivel_live = 1;
+		if (s_swivel_settle > 0)
+			s_swivel_settle--;
+		return;
+	}
+	if (s_swivel_resync) {
+		s_swivel_head = h;
+		s_swivel_resync = 0;
+		return;
+	}
+	d = h - s_swivel_head;
+	while (d > 3.14159265f) d -= 6.28318531f;
+	while (d < -3.14159265f) d += 6.28318531f;
+	s_swivel_head = h;
+	if (fabsf(d) > 0.5f) {
+		s_swivel = h;	/* a jump (the runtime recentered): absorb it */
+		return;
+	}
+	d *= w;
+	if (d != 0.0f) {
+		vms_angvec a;
+		vms_matrix rm, nm;
+		a.p = a.b = 0;
+		a.h = (fixang)(d * (65536.0f / 6.28318531f));
+		vm_angles_2_matrix(&rm, &a);
+		vm_matrix_x_matrix(&nm, &ConsoleObject->orient, &rm);
+		ConsoleObject->orient = nm;
+		check_and_fix_matrix(&ConsoleObject->orient);
+		s_swivel += d;	/* what the ship has been turned, which the view takes back out */
+		while (s_swivel > 3.14159265f) s_swivel -= 6.28318531f;
+		while (s_swivel < -3.14159265f) s_swivel += 6.28318531f;
+		s_swivel_turned += fabsf(d);
+	}
+}
+
 void vrd_input_frame(void)
 {
 	vr_phys_input p;
@@ -1401,6 +1712,14 @@ void vrd_input_frame(void)
 	int held[VRB_COUNT], edge[VRB_COUNT];
 
 	s_map_valid = 0;
+	if (s_book_test_end && timer_query() > s_book_test_end) {
+		vrxr_log("VR: book test over (%s); quitting", vrxr_book_is_open() ? "still open" : "closed early");
+		vrxr_book_close();
+		/* Straight out: the first screen of a fresh install (pick a pilot)
+		 * refuses to close, so closing windows would never end.  exit() runs
+		 * vrd_shutdown (atexit) while the GL context still lives. */
+		exit(0);
+	}
 	if (s_switch) {
 		/* Switch Game: one window a frame, front first, as the game closes
 		 * them itself; the main loop ends when none are left. */
@@ -1416,6 +1735,7 @@ void vrd_input_frame(void)
 	}
 	vr_map_hands(&p, VrSet.leftorium, VrSet.swap_sticks, &s_map);
 	s_map_valid = 1;
+	swivel_frame();
 	s_seen |= (fabsf(p.lstick_x) + fabsf(p.lstick_y) > 0.5f ? 1u : 0u)
 		| (fabsf(p.rstick_x) + fabsf(p.rstick_y) > 0.5f ? 2u : 0u)
 		| (p.lgrip > 0.5f || p.rgrip > 0.5f ? 4u : 0u)
@@ -1451,6 +1771,21 @@ void vrd_input_frame(void)
 	pause = p.menu && !s_menu_held;
 	s_trig_held = trig;
 	s_menu_held = p.menu;
+
+	if (vrxr_book_is_open()) {
+		/* The game manual: the hands turn its pages; B, Y or Menu close it,
+		 * back to the menu it was opened from. */
+		const fix64 now = timer_query();
+		const float dt = s_book_last ? f2fl(now - s_book_last) : 1.0f / 90.0f;
+		s_book_last = now;
+		release_game_controls();
+		s_ptr_on = 0;
+		s_nav_dir = 0;
+		if (!vrxr_book_frame(&p, dt))
+			vrxr_log("VR: the game manual closed");
+		return;
+	}
+	s_book_last = 0;
 
 	if (s_splash) {
 		int any = choose || back || pause;
@@ -1549,9 +1884,16 @@ void vrd_add_axes(int speed_factor)
 	/* Full stick is the keyboard's full rate; the stock clamp follows. */
 	Controls.forward_thrust_time += (fix)(dead(s_map.move_y, VRD_STICK_DEAD) * ft);
 	Controls.sideways_thrust_time += (fix)(dead(s_map.move_x, VRD_STICK_DEAD) * ft);
-	Controls.heading_time += (fix)(dead(s_map.look_x, VRD_STICK_DEAD) * FrameTime);
-	/* Stick up lifts the nose (the engine's positive pitch dips it). */
-	Controls.pitch_time -= (fix)(dead(s_map.look_y, VRD_STICK_DEAD) * FrameTime / 2);
+	/* The look stick's dead zone widens on each axis the further the other is
+	 * pushed. A stick pushed straight up is never quite straight, and a little
+	 * yaw mixed into a pitch loop turns it into a corkscrew that reads as the
+	 * ship rolling. Straight up now pitches cleanly; a real diagonal still turns
+	 * both ways, and a lone axis is exactly as before. */
+	Controls.heading_time += (fix)(dead(s_map.look_x, VRD_STICK_DEAD + 0.25f * fabsf(s_map.look_y)) * FrameTime);
+	/* Stick up lifts the nose (the engine's positive pitch dips it), or dips
+	 * it with Invert look, as a flight stick does. */
+	Controls.pitch_time -= (fix)((VrSet.invert_look ? -1.0f : 1.0f) *
+		dead(s_map.look_y, VRD_STICK_DEAD + 0.25f * fabsf(s_map.look_x)) * FrameTime / 2);
 	/* The grips raise and lower the ship: left up, right down, analog.
 	 * s_roll is right minus left and has waited out the recenter chord. */
 	Controls.vertical_thrust_time -= (fix)(dead(s_roll, VRD_GRIP_DEAD) * ft);
@@ -1568,9 +1910,28 @@ void vrd_note(const char *what)
 	vrxr_log("VR: note: %s", what);
 }
 
+int vrd_book_available(void)
+{
+	return s_up && vrxr_book_available(VRD_BOOK_DIR);
+}
+
+int vrd_book_open(void)
+{
+	if (!s_up)
+		return 0;
+	/* The weapon hand turns the pages; the book sits in the other. */
+	return vrxr_book_open(VRD_BOOK_DIR, VrSet.leftorium ? 0 : 1, VrSet.book_float);
+}
+
+int vrd_book_showing(void)
+{
+	return s_up && vrxr_book_is_open();
+}
+
 void vrd_recenter(void)
 {
 	vrxr_recenter();
+	s_swivel_settle = 3;	/* the head's yaw jumps: absorb it, do not turn the ship */
 }
 
 const char *vrd_other_game_name(void)
@@ -1596,6 +1957,20 @@ int vrd_switch_pending(void)
 
 /* The other game's VR launcher, beside this game's own in its VR folder
  * (the engine runs from VR\game). */
+#ifdef __ANDROID__
+/* Standalone: the other game is another activity of this app, there when its
+ * files are (this game runs in its own data folder: files/ for Descent,
+ * files/descent2/ for Descent 2). */
+static int other_launcher(char *path, size_t size)
+{
+#ifdef VRD_DESCENT2
+	snprintf(path, size, "../descent.hog");
+#else
+	snprintf(path, size, "descent2/descent2.hog");
+#endif
+	return 1;
+}
+#else
 static int other_launcher(char *path, size_t size)
 {
 	char dir[600];
@@ -1608,6 +1983,7 @@ static int other_launcher(char *path, size_t size)
 #endif
 	return 1;
 }
+#endif
 
 static int other_launcher_exists(void)
 {
@@ -1630,6 +2006,17 @@ int vrd_switch_available(void)
 void vrd_after_exit(void)
 {
 	char path[700];
+#ifdef __ANDROID__
+	/* Standalone: Switch Game starts the other game; quitting goes back to
+	 * the game picker (the app's own first screen), not out of the app. */
+#ifdef VRD_DESCENT2
+	vrxr_start_program(s_switch && other_launcher_exists() ? "descent" : "picker");
+#else
+	vrxr_start_program(s_switch && other_launcher_exists() ? "descent2" : "picker");
+#endif
+	(void)path;
+	return;
+#endif
 	if (!s_switch || !other_launcher(path, sizeof(path)))
 		return;
 	/* Not vrd_switch_available: this runs after vrd_shutdown, which has

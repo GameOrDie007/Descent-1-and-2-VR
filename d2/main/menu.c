@@ -1880,7 +1880,7 @@ void do_sound_menu()
 	opt_sm_mtype0 = nitems;
 	m[nitems].type = NM_TYPE_RADIO; m[nitems].text = "no music"; m[nitems].value = (GameCfg.MusicType == MUSIC_TYPE_NONE); m[nitems].group = 0; nitems++;
 
-#if defined(USE_SDLMIXER) || defined(_WIN32)
+#if defined(USE_SDLMIXER) || defined(_WIN32) || defined(__ANDROID__)
 	opt_sm_mtype1 = nitems;
 	m[nitems].type = NM_TYPE_RADIO; m[nitems].text = "built-in/addon music"; m[nitems].value = (GameCfg.MusicType == MUSIC_TYPE_BUILTIN); m[nitems].group = 0; nitems++;
 #endif

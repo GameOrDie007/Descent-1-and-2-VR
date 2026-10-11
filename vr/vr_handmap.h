@@ -11,10 +11,12 @@
 /* GameOrDieXR is Game Or Die's own closed library (GameOrDieXR.dll); these
  * headers are its interface, published with the port. */
 #ifndef VRXR_API
-#if defined(VRXR_BUILD)
-#define VRXR_API __declspec(dllexport)
-#elif defined(VRXR_STATIC)
+#if defined(VRXR_STATIC)
 #define VRXR_API
+#elif !defined(_WIN32)
+#define VRXR_API __attribute__((visibility("default")))	/* Android: a shared library */
+#elif defined(VRXR_BUILD)
+#define VRXR_API __declspec(dllexport)
 #else
 #define VRXR_API __declspec(dllimport)
 #endif

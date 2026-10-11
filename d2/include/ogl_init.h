@@ -11,7 +11,9 @@
 #include <stddef.h>
 #endif
 
+#ifndef OGLES	/* OpenGL ES 1 needs no extension loader */
 #include <GL/glew.h>
+#endif
 #ifdef _WIN32
 #include "loadgl.h"
 int ogl_init_load_library(void);
@@ -24,6 +26,23 @@ int ogl_init_load_library(void);
 #  define GL_GLEXT_PROTOTYPES
 #  ifdef OGLES
 #  include <GLES/gl.h>
+#  ifdef __ANDROID__
+   /* OpenGL ES 1.1 on Android: the desktop calls the VR code makes, by
+    * their ES 1 extension names (all present on Quest), and a
+    * gluPerspective, which ES has no library for. */
+#  include <GLES/glext.h>
+#  include <math.h>
+#  define glBlendFuncSeparate glBlendFuncSeparateOES
+#  define glGenerateMipmap glGenerateMipmapOES
+#  define GL_BLEND_SRC_RGB GL_BLEND_SRC_RGB_OES
+#  define GL_BLEND_DST_RGB GL_BLEND_DST_RGB_OES
+#  define glFrustum(l, r, b, t, n, f) glFrustumf((GLfloat)(l), (GLfloat)(r), (GLfloat)(b), (GLfloat)(t), (GLfloat)(n), (GLfloat)(f))
+static inline void gluPerspective(double fovy, double aspect, double zn, double zf)
+{
+	const double t = zn * tan(fovy * 3.14159265358979 / 360.0);
+	glFrustumf((GLfloat)(-t * aspect), (GLfloat)(t * aspect), (GLfloat)-t, (GLfloat)t, (GLfloat)zn, (GLfloat)zf);
+}
+#  endif
 #  else
 #  include <GL/gl.h>
 #  endif

@@ -147,6 +147,24 @@ VRXR_API int vrxr_desktop_fills_monitor(void);
  * display, so a monitor-filling spectator view is sharp, not stretched. */
 VRXR_API void vrxr_dpi_aware(void);
 
+/* The Game Tome book: the game's manual, held in the off hand (or floating in
+ * front), its pages turned by the main hand.  dir holds tome.txt and the page
+ * pictures (Setup makes it from the player's own manual).  While it is open
+ * the game sends it the controllers each frame and draws it into the eyes;
+ * the menu panel stands aside. */
+VRXR_API int vrxr_book_available(const char *dir);
+VRXR_API int vrxr_book_open(const char *dir, int main_hand, int floating);	/* 0 = no book there */
+VRXR_API int vrxr_book_is_open(void);
+VRXR_API void vrxr_book_close(void);
+/* Once a frame while open, on the GL thread; 0 = the player closed it. */
+VRXR_API int vrxr_book_frame(const vr_phys_input *in, float seconds);
+/* Into the eye target bound now (between vrxr_eye_begin and vrxr_eye_end). */
+VRXR_API void vrxr_book_draw(const vrxr_eye *eye);
+/* A frame with no game view: begin, draw and end both eyes itself.  1 = done. */
+VRXR_API int vrxr_book_draw_eyes(void);
+/* Where the book is and how big a page is (the selftest). */
+VRXR_API int vrxr_book_where(float o[3], float x[3], float y[3], float z[3], float *page_w, float *page_h);
+
 VRXR_API void vrxr_shutdown(void);
 
 #ifdef __cplusplus

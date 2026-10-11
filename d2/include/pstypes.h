@@ -21,7 +21,7 @@ typedef signed char sbyte;
 
 //define unsigned types;
 typedef unsigned char ubyte;
-#if defined(_WIN32) || defined(macintosh)
+#if defined(_WIN32) || defined(macintosh) || defined(__ANDROID__)	/* Android: bionic has no ushort */
 typedef unsigned short ushort;
 typedef unsigned int uint;
 #endif

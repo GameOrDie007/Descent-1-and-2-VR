@@ -41,6 +41,12 @@ static const char MusicVolumeStr[] = "MusicVolume";
 static const char ReverseStereoStr[] = "ReverseStereo";
 static const char OrigTrackOrderStr[] = "OrigTrackOrder";
 static const char MusicTypeStr[] = "MusicType";
+#ifdef __ANDROID__
+/* Builds before Android had music saved "no music"; the first run with
+ * music turns it on once. */
+static const char AndroidMusicStr[] = "AndroidMusic";
+static int android_music_seen;
+#endif
 static const char CMLevelMusicPlayOrderStr[] = "CMLevelMusicPlayOrder";
 static const char CMLevelMusicTrack0Str[] = "CMLevelMusicTrack0";
 static const char CMLevelMusicTrack1Str[] = "CMLevelMusicTrack1";
@@ -144,6 +150,10 @@ int ReadConfigFile()
 				GameCfg.ReverseStereo = strtol(value, NULL, 10);
 			else if (!strcmp(token, OrigTrackOrderStr))
 				GameCfg.OrigTrackOrder = strtol(value, NULL, 10);
+#ifdef __ANDROID__
+			else if (!strcmp(token, AndroidMusicStr))
+				android_music_seen = 1;
+#endif
 			else if (!strcmp(token, MusicTypeStr))
 				GameCfg.MusicType = strtol(value, NULL, 10);
 			else if (!strcmp(token, CMLevelMusicPlayOrderStr))
@@ -233,6 +243,10 @@ int ReadConfigFile()
 	}
 
 	PHYSFS_close(infile);
+#ifdef __ANDROID__
+	if (!android_music_seen && GameCfg.MusicType == MUSIC_TYPE_NONE)
+		GameCfg.MusicType = MUSIC_TYPE_BUILTIN;
+#endif
 
 	if ( GameCfg.DigiVolume > 8 ) GameCfg.DigiVolume = 8;
 	if ( GameCfg.MusicVolume > 8 ) GameCfg.MusicVolume = 8;
@@ -260,6 +274,9 @@ int WriteConfigFile()
 	PHYSFSX_printf(infile, "%s=%d\n", ReverseStereoStr, GameCfg.ReverseStereo);
 	PHYSFSX_printf(infile, "%s=%d\n", OrigTrackOrderStr, GameCfg.OrigTrackOrder);
 	PHYSFSX_printf(infile, "%s=%d\n", MusicTypeStr, GameCfg.MusicType);
+#ifdef __ANDROID__
+	PHYSFSX_printf(infile, "%s=1\n", AndroidMusicStr);
+#endif
 	PHYSFSX_printf(infile, "%s=%d\n", CMLevelMusicPlayOrderStr, GameCfg.CMLevelMusicPlayOrder);
 	PHYSFSX_printf(infile, "%s=%d\n", CMLevelMusicTrack0Str, GameCfg.CMLevelMusicTrack[0]);
 	PHYSFSX_printf(infile, "%s=%d\n", CMLevelMusicTrack1Str, GameCfg.CMLevelMusicTrack[1]);

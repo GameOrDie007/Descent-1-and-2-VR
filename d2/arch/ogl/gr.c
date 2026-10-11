@@ -70,17 +70,27 @@
 #if defined(__APPLE__) && defined(__MACH__)
 #include <OpenGL/glu.h>
 #else
-#ifdef OGLES
+/* OGLES_EGL: the engine opens its own EGL surface (Raspberry Pi, X11).  On
+ * Android SDL owns the window and the GL context; only the drawing is GLES. */
+#if defined(OGLES) && !defined(__ANDROID__)
+#define OGLES_EGL
+#endif
+#ifdef __ANDROID__
+#include <dlfcn.h>
+#include <EGL/egl.h>
+#include "timer.h"
+#endif
+#ifdef OGLES_EGL
 #include <EGL/egl.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <SDL_syswm.h>
-#else
+#elif !defined(OGLES)
 #include <GL/glu.h>
 #endif
 #endif
 
-#ifdef OGLES
+#ifdef OGLES_EGL
 int sdl_video_flags = 0;
 
 #ifdef RPI
@@ -97,7 +107,7 @@ int gl_initialized=0;
 int linedotscale=1; // scalar of glLinewidth and glPointSize - only calculated once when resolution changes
 int sdl_no_modeswitch=0;
 
-#ifdef OGLES
+#ifdef OGLES_EGL
 EGLDisplay eglDisplay=EGL_NO_DISPLAY;
 EGLConfig eglConfig;
 EGLSurface eglSurface=EGL_NO_SURFACE;
@@ -123,10 +133,48 @@ bool TestEGLError(char* pszLocation)
 
 void ogl_swap_buffers_internal(void)
 {
-#ifdef OGLES
+#ifdef OGLES_EGL
 	eglSwapBuffers(eglDisplay, eglSurface);
 #else
 	SDL_GL_SwapBuffers();
+#endif
+#ifdef __ANDROID__
+	{
+		/* Bring-up diagnostics: frames presented, the viewport, GL errors. */
+		static int frames;
+		static fix64 next;
+		const fix64 now = timer_query();
+		static int caps_logged;
+		if (!caps_logged) {
+			/* What this driver offers, for the VR route: once. */
+			const char *ext = (const char *)glGetString(GL_EXTENSIONS);
+			const char *eext = eglQueryString(eglGetCurrentDisplay(), EGL_EXTENSIONS);
+			caps_logged = 1;
+			con_printf(CON_NORMAL, "Android: GL %s | %s | %s\n", (const char *)glGetString(GL_VERSION),
+				(const char *)glGetString(GL_RENDERER), (const char *)glGetString(GL_VENDOR));
+			while (ext && *ext) {	/* the log line is limited: in pieces */
+				char part[400];
+				snprintf(part, sizeof(part), "%s", ext);
+				con_printf(CON_NORMAL, "Android: GL ext %s\n", part);
+				ext += strlen(part);
+			}
+			while (eext && *eext) {
+				char part[400];
+				snprintf(part, sizeof(part), "%s", eext);
+				con_printf(CON_NORMAL, "Android: EGL ext %s\n", part);
+				eext += strlen(part);
+			}
+		}
+		frames++;
+		if (now >= next) {
+			GLint vp[4] = { 0, 0, 0, 0 };
+			glGetIntegerv(GL_VIEWPORT, vp);
+			con_printf(CON_NORMAL, "Android: %d frames; viewport %d,%d %dx%d; GL error 0x%x\n",
+				frames, vp[0], vp[1], vp[2], vp[3], glGetError());
+			frames = 0;
+			next = now + F1_0 * 5;
+		}
+	}
 #endif
 }
 
@@ -268,7 +316,7 @@ int rpi_setup_element(int x, int y, Uint32 video_flags, int update)
 
 #endif // RPI
 
-#ifdef OGLES
+#ifdef OGLES_EGL
 void ogles_destroy(void)
 {
 	if( eglDisplay != EGL_NO_DISPLAY ) {
@@ -300,7 +348,7 @@ int ogl_init_window(int x, int y)
 	int use_x,use_y,use_bpp;
 	Uint32 use_flags;
 
-#ifdef OGLES
+#ifdef OGLES_EGL
 	SDL_SysWMinfo info;
 	Window    x11Window = 0;
 	Display*  x11Display = 0;
@@ -351,12 +399,17 @@ int ogl_init_window(int x, int y)
 			use_x=vinfo->current_w;
 			use_y=vinfo->current_h;
 			use_bpp=vinfo->vfmt->BitsPerPixel;
-			use_flags=SDL_SWSURFACE | SDL_ANYFORMAT;
+#ifdef OGLES_EGL
+			use_flags=SDL_SWSURFACE | SDL_ANYFORMAT;	/* the Pi draws through its own EGL surface */
+#endif
 		} else {
 			con_printf(CON_URGENT, "Could not query video info\n");
 		}
 	}
 
+#ifdef __ANDROID__
+	con_printf(CON_NORMAL, "Android: SDL_SetVideoMode(%d, %d, %d, 0x%x)\n", use_x, use_y, use_bpp, (unsigned)use_flags);
+#endif
 	if (!SDL_SetVideoMode(use_x, use_y, use_bpp, use_flags))
 	{
 #ifdef RPI
@@ -367,7 +420,7 @@ int ogl_init_window(int x, int y)
 #endif
 	}
 
-#ifdef OGLES
+#ifdef OGLES_EGL
 #ifndef RPI
 	// NOTE: on the RPi, the EGL stuff is not connected to the X11 window,
 	//       so there is no need to destroy and recreate this
@@ -443,7 +496,9 @@ int ogl_init_window(int x, int y)
 		con_printf(CON_DEBUG, "EGL: made context current\n");
 	}
 #endif
+#ifndef OGLES
 	glewInit();
+#endif
 #ifdef OGL_MERGE
 	ogl_init_prog();
 #endif
@@ -609,7 +664,7 @@ int gr_list_modes( u_int32_t gsmodes[] )
 {
 	SDL_Rect** modes;
 	int i = 0, modesnum = 0;
-#ifdef OGLES
+#ifdef OGLES_EGL
 	int sdl_check_flags = SDL_FULLSCREEN; // always use Fullscreen as lead.
 #else
 	int sdl_check_flags = SDL_OPENGL | SDL_FULLSCREEN; // always use Fullscreen as lead.
@@ -752,7 +807,21 @@ int ogl_init_load_library(void)
 
 void gr_set_attributes(void)
 {
-#ifndef OGLES
+#ifdef __ANDROID__
+	{
+		/* sdl12-compat runs on SDL2, which gives Android an OpenGL ES 2
+		 * context unless asked; the engine's GLES path is 1.x.  The SDL 1.2
+		 * API has no way to say so, so ask SDL2 itself. */
+		void *sdl2 = dlopen("libSDL2.so", RTLD_NOW | RTLD_NOLOAD);
+		int (*set_attr)(int, int) = sdl2 ? (int (*)(int, int))dlsym(sdl2, "SDL_GL_SetAttribute") : NULL;
+		if (set_attr) {
+			set_attr(21, 0x0004);	/* SDL_GL_CONTEXT_PROFILE_MASK: ES */
+			set_attr(17, 1);	/* SDL_GL_CONTEXT_MAJOR_VERSION */
+			set_attr(18, 1);	/* SDL_GL_CONTEXT_MINOR_VERSION */
+		}
+	}
+#endif
+#ifndef OGLES_EGL
 	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
 	SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE,0);
 	SDL_GL_SetAttribute(SDL_GL_ACCUM_RED_SIZE,0);
@@ -828,6 +897,17 @@ int gr_init(int mode)
 	CALLOC( grd_curscreen,grs_screen,1 );
 	grd_curscreen->sc_canvas.cv_bitmap.bm_data = NULL;
 
+#ifdef __ANDROID__
+	{
+		/* Android: the window is the whole display; draw at its size, or
+		 * the picture sits in a corner of it. */
+		sdl_no_modeswitch = 1;	/* no video modes to switch: every size is drawn in that window */
+		const SDL_VideoInfo *vi = SDL_GetVideoInfo();
+		if (vi && vi->current_w >= 320 && vi->current_h >= 200)
+			Game_screen_mode = mode = SM(vi->current_w, vi->current_h);
+		con_printf(CON_NORMAL, "Android: display %dx%d\n", vi ? vi->current_w : -1, vi ? vi->current_h : -1);
+	}
+#endif
 	// Set the mode.
 	if ((retcode=gr_set_mode(mode)))
 		return retcode;
@@ -869,7 +949,7 @@ void gr_close()
 		OpenGL_LoadLibrary(false);
 #endif
 
-#ifdef OGLES
+#ifdef OGLES_EGL
 	ogles_destroy();
 #ifdef RPI
 	con_printf(CON_DEBUG, "RPi: cleanuing up\n");

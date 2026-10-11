@@ -248,7 +248,7 @@ void event_process(void)
 					vrd_panel_overlay();
 					vrd_panel_end();
 				}
-				else
+				else if (!vrd_book_showing())	// the game manual: no menu on the monitor over it
 					draw_windows(DRAW_ABOVE_GAME);
 			}
 			else if (vrd_panel_begin(VRD_PANEL_HUD))
@@ -265,7 +265,7 @@ void event_process(void)
 				vrd_panel_overlay();
 				vrd_panel_end();
 			}
-			else
+			else if (!vrd_book_showing())
 				draw_windows(DRAW_ALL);
 			break;
 		default:

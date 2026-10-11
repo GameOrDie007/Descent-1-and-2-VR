@@ -68,3 +68,4 @@ build-local.cmd
 # GameOrDieXR, prebuilt (its source is not published)
 !vr/lib/GameOrDieXR.dll
 !vr/lib/GameOrDieXR.lib
+!vr/lib/android/arm64-v8a/*.so

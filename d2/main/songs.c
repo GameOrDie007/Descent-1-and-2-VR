@@ -35,6 +35,16 @@ COPYRIGHT 1993-1999 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "timer.h"
 #include "args.h"
 
+#ifdef __ANDROID__
+/* The HMP songs through a soundfont: platform/quest/jni/music_android.c */
+extern int androidmusic_play(char *hmp_name, int loop);
+extern void androidmusic_stop(void);
+extern void androidmusic_pause(void);
+extern void androidmusic_resume(void);
+extern void androidmusic_pause_resume(void);
+extern void androidmusic_set_volume(int volume);
+#endif
+
 int Songs_initialized = 0;
 static int Song_playing = -1; // -1 if no song playing, else the Descent song number
 static int Redbook_playing = 0; // Redbook track num differs from Song_playing. We need this for Redbook repeat hooks.
@@ -50,6 +60,9 @@ void songs_set_volume(int volume)
 {
 #ifdef _WIN32
 	digi_win32_set_midi_volume(volume);
+#endif
+#ifdef __ANDROID__
+	androidmusic_set_volume(volume);
 #endif
 	if (GameCfg.MusicType == MUSIC_TYPE_REDBOOK)
 	{
@@ -149,7 +162,7 @@ void songs_init()
 	if (1)
 #endif
 	{
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(__ANDROID__)
 		if (GameCfg.MusicType == MUSIC_TYPE_BUILTIN)
 			GameCfg.MusicType = MUSIC_TYPE_NONE;
 #endif
@@ -184,6 +197,9 @@ void songs_stop_all(void)
 #ifdef _WIN32
 	digi_win32_stop_midi_song();	// Stop midi song, if playing
 #endif
+#ifdef __ANDROID__
+	androidmusic_stop();
+#endif
 	RBAStop();
 #ifdef USE_SDLMIXER
 	mix_stop_music();
@@ -197,6 +213,9 @@ void songs_pause(void)
 #ifdef _WIN32
 	digi_win32_pause_midi_song();
 #endif
+#ifdef __ANDROID__
+	androidmusic_pause();
+#endif
 	if (GameCfg.MusicType == MUSIC_TYPE_REDBOOK)
 		RBAPause();
 #ifdef USE_SDLMIXER
@@ -209,6 +228,9 @@ void songs_resume(void)
 #ifdef _WIN32
 	digi_win32_resume_midi_song();
 #endif
+#ifdef __ANDROID__
+	androidmusic_resume();
+#endif
 	if (GameCfg.MusicType == MUSIC_TYPE_REDBOOK)
 		RBAResume();
 #ifdef USE_SDLMIXER
@@ -218,6 +240,9 @@ void songs_resume(void)
 
 void songs_pause_resume(void)
 {
+#ifdef __ANDROID__
+	androidmusic_pause_resume();
+#endif
 	if (GameCfg.MusicType == MUSIC_TYPE_REDBOOK)
 		RBAPauseResume();
 #ifdef USE_SDLMIXER
@@ -298,6 +323,8 @@ int songs_play_file(char *filename, int repeat, void (*hook_finished_track)())
 	{
 #if defined(_WIN32)
 		return digi_win32_play_midi_song( filename, repeat );
+#elif defined(__ANDROID__)
+		return androidmusic_play( filename, repeat );
 #elif defined(USE_SDLMIXER)
 		return mix_play_file( filename, repeat, hook_finished_track );
 #else

@@ -1,0 +1,38 @@
+--- src/SDL12_compat.c.orig	2026-10-04 18:19:23.939317500 -0500
++++ src/SDL12_compat.c	2026-10-04 21:45:59.179716300 -0500
+@@ -1341,7 +1341,11 @@
+     }
+ #elif defined(__unix__)
+     #include <dlfcn.h>
++    #ifdef __ANDROID__
++    #define SDL20_LIBNAME "libSDL2.so"  /* Android apps ship SDL2 as libSDL2.so */
++    #else
+     #define SDL20_LIBNAME "libSDL2-2.0.so.0"
++    #endif
+     #define SDL20_REQUIRED_VER SDL_VERSIONNUM(2,0,7)
+     static void *Loaded_SDL20 = NULL;
+     #define LoadSDL20Library() ((Loaded_SDL20 = dlopen(SDL20_LIBNAME, RTLD_LOCAL|RTLD_NOW)) != NULL)
+@@ -7644,11 +7648,23 @@
+         }
+     }
+ 
++#ifdef __ANDROID__
++    /* Android sends input from its UI thread, and SDL2 runs our event filter
++       there while holding its own event-watcher lock; the filter then takes
++       EventQueueMutex.  Holding EventQueueMutex while SDL2 pumps here takes
++       the two locks in the other order and deadlocks, so drain first (the
++       filter locks for itself) and lock after. */
++    while (SDL20_PollEvent(&e)) {  /* spin to drain the SDL2 event queue. */ }
++    if (EventQueueMutex) {
++        SDL20_LockMutex(EventQueueMutex);
++    }
++#else
+     if (EventQueueMutex) {
+         SDL20_LockMutex(EventQueueMutex);
+     }
+ 
+     while (SDL20_PollEvent(&e)) {  /* spin to drain the SDL2 event queue. */ }
++#endif
+ 
+     /* If there's a pending KEYDOWN event, and we haven't got a TEXTINPUT
+      * event which matches it, then let it through now. */

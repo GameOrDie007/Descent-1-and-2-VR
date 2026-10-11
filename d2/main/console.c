@@ -4,6 +4,9 @@
  *
  */
 
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -84,6 +87,9 @@ void con_printf(int priority, const char *fmt, ...)
 
 		/* Print output to stdout */
 		printf("%s",buffer);
+#ifdef __ANDROID__
+		__android_log_write(ANDROID_LOG_INFO, "DescentVR", buffer);	/* adb logcat -s DescentVR */
+#endif
 
 		/* Print output to gamelog.txt */
 		if (gamelog_fp)

@@ -1620,11 +1620,11 @@ int nm_messagebox1( char *title, int (*subfunction)(newmenu *menu, d_event *even
 	va_list args;
 	char *s;
 	char nm_text[MESSAGEBOX_TEXT_SIZE];
-	newmenu_item nm_message_items[5];
+	newmenu_item nm_message_items[8];	// VR's pause menu has 6 rows
 
 	va_start(args, nchoices );
 
-	Assert( nchoices <= 5 );
+	Assert( nchoices <= 8 );
 
 	for (i=0; i<nchoices; i++ )	{
 		s = va_arg( args, char * );
@@ -1647,11 +1647,11 @@ int nm_messagebox( char *title, int nchoices, ... )
 	va_list args;
 	char *s;
 	char nm_text[MESSAGEBOX_TEXT_SIZE];
-	newmenu_item nm_message_items[5];
+	newmenu_item nm_message_items[8];	// VR's pause menu has 6 rows
 
 	va_start(args, nchoices );
 
-	Assert( nchoices <= 5 );
+	Assert( nchoices <= 8 );
 
 	for (i=0; i<nchoices; i++ )	{
 		s = va_arg( args, char * );
@@ -2198,11 +2198,11 @@ newmenu *nm_messagebox_fixedfont( char *title, int nchoices, ... )
 	va_list args;
 	char *s;
 	char nm_text[MESSAGEBOX_TEXT_SIZE];
-	newmenu_item nm_message_items[5];
+	newmenu_item nm_message_items[8];	// VR's pause menu has 6 rows
 
 	va_start(args, nchoices );
 
-	Assert( nchoices <= 5 );
+	Assert( nchoices <= 8 );
 
 	for (i=0; i<nchoices; i++ )	{
 		s = va_arg( args, char * );

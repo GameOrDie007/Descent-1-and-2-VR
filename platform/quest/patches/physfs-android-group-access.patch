@@ -1,0 +1,28 @@
+--- a/src/physfs_platform_posix.c
++++ b/src/physfs_platform_posix.c
+@@ -149,7 +149,13 @@
+ 
+ int __PHYSFS_platformMkDir(const char *path)
+ {
++#ifdef __ANDROID__
++    /* Descent 1 & 2 VR: the app's folders and files open to its storage group,
++       so the PC installer (adb) can copy the player's pilots and saves. */
++    const int rc = mkdir(path, S_IRWXU | S_IRWXG);
++#else
+     const int rc = mkdir(path, S_IRWXU);
++#endif
+     BAIL_IF(rc == -1, errcodeFromErrno(), 0);
+     return 1;
+ } /* __PHYSFS_platformMkDir */
+@@ -182,7 +188,11 @@
+ #endif
+ 
+     do {
++#ifdef __ANDROID__
++        fd = open(filename, mode, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
++#else
+         fd = open(filename, mode, S_IRUSR | S_IWUSR);
++#endif
+     } while ((fd < 0) && (errno == EINTR));
+     BAIL_IF(fd < 0, errcodeFromErrno(), NULL);
+ 

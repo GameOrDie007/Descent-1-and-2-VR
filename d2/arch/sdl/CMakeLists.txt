@@ -23,7 +23,7 @@ if(SDLMIXER)
     target_link_libraries(arch_sdl ${SDL_MIXER_LIBRARY})
 endif()
 
-include_directories(${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/arch/include ${CMAKE_SOURCE_DIR}/main)
+include_directories(${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/arch/include ${PROJECT_SOURCE_DIR}/main)
 
 target_compile_definitions(arch_sdl PUBLIC
     DXX_VERSION_MAJORi=${PROJECT_VERSION_MAJOR}

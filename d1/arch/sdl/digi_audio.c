@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 #include <SDL.h>
 #include <digi_audio.h>
 #include "pstypes.h"
@@ -164,6 +165,91 @@ static void audio_mixcallback(void *userdata, Uint8 *stream, int len)
 }
 //end changes by adb
 
+#ifdef __ANDROID__
+/* Android: 16-bit output at 44.1 kHz, so the game's music (music_android.c)
+ * can share the device at full quality.  The effects keep their own rate and
+ * are stepped through. */
+#define ANDROID_AUDIO_RATE 44100
+extern void androidmusic_set_rate(int rate);
+extern void androidmusic_mix(int *acc, int frames);
+static unsigned int s_frac[MAX_SOUND_SLOTS];	/* 16.16 position below a sample */
+
+/* Loud moments (music under a firefight) squash smoothly towards full
+ * scale instead of clipping into crackle. */
+static Sint16 soft_limit(int x)
+{
+	const float knee = 24576.0f, room = 32767.0f - 24576.0f;
+	const float m = (float)(x < 0 ? -x : x);
+	float y;
+	if (m <= knee)
+		return (Sint16)x;
+	y = knee + room * tanhf((m - knee) / room);
+	return (Sint16)(x < 0 ? -y : y);
+}
+
+static void audio_mixcallback16(void *userdata, Uint8 *stream, int len)
+{
+	static int acc[2 * 1024];
+	Sint16 *out = (Sint16 *)stream;
+	int frames = len / 4;
+	const unsigned int step = (unsigned int)(((unsigned long long)digi_sample_rate << 16) / ANDROID_AUDIO_RATE);
+
+	memset(stream, 0, len);
+	if (!digi_initialised)
+		return;
+
+	SDL_LockAudio();
+	while (frames > 0) {
+		const int n = frames > 1024 ? 1024 : frames;
+		struct sound_slot *sl;
+		int i;
+
+		memset(acc, 0, sizeof(int) * 2 * n);
+		for (sl = SoundSlots; sl < SoundSlots + MAX_SOUND_SLOTS; sl++) {
+			unsigned int pos, frac;
+			fix vl, vr;
+			int x;
+			if (!sl->playing || !sl->length)
+				continue;
+			if ((x = sl->pan) & 0x8000) {
+				vl = 0x20000 - x * 2;
+				vr = 0x10000;
+			} else {
+				vl = 0x10000;
+				vr = x * 2;
+			}
+			vl = fixmul(vl, (x = sl->volume));
+			vr = fixmul(vr, x);
+			pos = sl->position;
+			frac = s_frac[sl - SoundSlots];
+			for (i = 0; i < n; i++) {
+				const int v = (int)sl->samples[pos] - 0x80;
+				acc[2 * i] += fixmul(v << 8, vl);
+				acc[2 * i + 1] += fixmul(v << 8, vr);
+				frac += step;
+				pos += frac >> 16;
+				frac &= 0xffff;
+				if (pos >= (unsigned int)sl->length) {
+					if (!sl->looped) {
+						sl->playing = 0;
+						break;
+					}
+					pos %= sl->length;
+				}
+			}
+			sl->position = pos;
+			s_frac[sl - SoundSlots] = frac;
+		}
+		androidmusic_mix(acc, n);
+		for (i = 0; i < 2 * n; i++)
+			out[i] = soft_limit(acc[i]);
+		out += 2 * n;
+		frames -= n;
+	}
+	SDL_UnlockAudio();
+}
+#endif
+
 /* Initialise audio devices. */
 int digi_audio_init()
 {
@@ -178,6 +264,12 @@ int digi_audio_init()
 	//end this section addition/change - SL
 	WaveSpec.samples = SOUND_BUFFER_SIZE;
 	WaveSpec.callback = audio_mixcallback;
+#ifdef __ANDROID__
+	WaveSpec.freq = ANDROID_AUDIO_RATE;
+	WaveSpec.format = AUDIO_S16SYS;
+	WaveSpec.callback = audio_mixcallback16;
+	androidmusic_set_rate(ANDROID_AUDIO_RATE);
+#endif
 
 	if ( SDL_OpenAudio(&WaveSpec, NULL) < 0 ) {
 		//edited on 10/05/98 by Matt Mueller - should keep running, just with no sound.
@@ -276,6 +368,9 @@ int digi_audio_start_sound(short soundnum, fix volume, int pan, int looping, int
 	SoundSlots[next_channel].volume = fixmul(digi_volume, volume);
 	SoundSlots[next_channel].pan = pan;
 	SoundSlots[next_channel].position = 0;
+#ifdef __ANDROID__
+	s_frac[next_channel] = 0;
+#endif
 	SoundSlots[next_channel].looped = looping;
 	SoundSlots[next_channel].playing = 1;
 	SoundSlots[next_channel].soundobj = soundobj;

@@ -15,6 +15,11 @@
 #include <ApplicationServices/ApplicationServices.h>
 #endif
 
+#ifdef __ANDROID__
+#include <unistd.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#endif
 #include "physfsx.h"
 #include "args.h"
 #include "object.h"
@@ -37,9 +42,26 @@ void PHYSFSX_init(int argc, char *argv[])
 	int bundle = 0;
 #endif
 	
+#ifdef __ANDROID__
+	PHYSFS_init(NULL);	/* Android PhysFS takes a PHYSFS_AndroidInit or NULL here, not a path */
+#else
 	PHYSFS_init(argv[0]);
+#endif
 	PHYSFS_permitSymbolicLinks(1);
 	base_dir = strdup(PHYSFS_getBaseDir());
+#ifdef __ANDROID__
+	{
+		/* Android: no readable program folder; the app's data folder (HOME,
+		 * set by DescentActivity) holds the game files and the settings. */
+		const char *home = getenv("HOME");
+		if (home && *home) {
+			free(base_dir);
+			base_dir = malloc(strlen(home) + 2);
+			sprintf(base_dir, "%s/", home);
+			chdir(home);	/* files opened by plain name (vr.cfg) land here too */
+		}
+	}
+#endif
 	
 #ifdef __unix__
 	if ((appimage = getenv("APPIMAGE")))
@@ -89,6 +111,51 @@ void PHYSFSX_init(int argc, char *argv[])
 	else
 		strncpy(fullPath, path, PATH_MAX + 5);
 	
+#ifdef __ANDROID__
+	{
+		/* Android: pilots, saves and settings beside the game files, not in
+		 * a hidden folder of their own, so the PC installer can back them up
+		 * (a folder the game makes is closed to it).  Builds before this kept
+		 * them in .d1x-redux: moved up once. */
+		const char *home = getenv("HOME");
+		if (home && *home) {
+			char old[PATH_MAX + 5];
+			DIR *d;
+			snprintf(fullPath, sizeof(fullPath), "%s/", home);
+			snprintf(old, sizeof(old), "%s/.d1x-redux", home);
+			if ((d = opendir(old)) != NULL) {
+				struct dirent *e;
+				while ((e = readdir(d)) != NULL) {
+					char from[2 * PATH_MAX + 8], to[2 * PATH_MAX + 8];
+					struct stat st;
+					if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, ".."))
+						continue;
+					snprintf(from, sizeof(from), "%s/%s", old, e->d_name);
+					snprintf(to, sizeof(to), "%s/%s", home, e->d_name);
+					if (stat(to, &st) != 0)
+						rename(from, to);
+				}
+				closedir(d);
+				rmdir(old);
+			}
+			/* Files the game made before its file library opened them to the
+			 * storage group (as it now does) were the game's alone: opened up
+			 * here, so the installer can copy pilots and saves. */
+			if ((d = opendir(home)) != NULL) {
+				struct dirent *e;
+				while ((e = readdir(d)) != NULL) {
+					char f[2 * PATH_MAX + 8];
+					struct stat st;
+					snprintf(f, sizeof(f), "%s/%s", home, e->d_name);
+					if (e->d_name[0] != '.' && stat(f, &st) == 0 && S_ISREG(st.st_mode) &&
+						st.st_uid == getuid() && (st.st_mode & 0060) != 0060)
+						chmod(f, (st.st_mode & 0777) | 0060);
+				}
+				closedir(d);
+			}
+		}
+	}
+#endif
 	PHYSFS_setWriteDir(fullPath);
 	if (!PHYSFS_getWriteDir())
 	{                                               // need to make it

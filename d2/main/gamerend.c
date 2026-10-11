@@ -855,7 +855,10 @@ void game_render_frame_mono(int flip)
 #ifdef USE_VR
 	if (vrd_eye_active())
 	{
-		// In an eye only the crosshair: the HUD goes on the panel.
+		// In an eye only the cockpit round the player and the crosshair:
+		// the HUD goes on the panel.
+		if (!Rear_view)
+			vrd_draw_cockpit();
 		if (!Rear_view && PlayerCfg.HudMode != 3 && Viewer->type == OBJ_PLAYER)
 			show_reticle(PlayerCfg.ReticleType, 1);
 	}

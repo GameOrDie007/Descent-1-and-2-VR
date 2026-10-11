@@ -34,6 +34,9 @@ COPYRIGHT 1993-1999 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "textures.h"
 #include "byteswap.h"
 #include "object.h"
+#ifdef USE_VR
+#include "vr_descent.h"
+#endif
 #include "physics.h"
 #include "slew.h"
 #include "render.h"
@@ -757,7 +760,11 @@ void render_object(object *obj)
 {
 	int mld_save;
 
+#ifdef USE_VR
+	if ( obj == Viewer && !vrd_show_own_ship() )	// VR third person: the camera is behind it
+#else
 	if ( obj == Viewer )
+#endif
 		return;
 
 	// Don't draw a player if we are observing them in first person.

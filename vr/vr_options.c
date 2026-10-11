@@ -44,12 +44,12 @@ static const char *const k_cfg = "vr.cfg";
 static const char *const k_action_key[VRA_COUNT] = {
 	"none", "slideup", "slidedown", "nextprimary", "nextsecondary", "flare",
 	"bomb", "rearview", "automap", "recenter", "afterburner", "headlight",
-	"energyshield", "bankleft", "bankright"
+	"energyshield", "bankleft", "bankright", "changeview"
 };
 static const char *const k_action_name[VRA_COUNT] = {
 	"(none)", "Slide up", "Slide down", "Next primary", "Next secondary",
 	"Fire flare", "Drop bomb", "Rear view", "Automap", "Recenter", "Afterburner",
-	"Headlight", "Energy to shield", "Bank left", "Bank right"
+	"Headlight", "Energy to shield", "Bank left", "Bank right", "Change view"
 };
 static const char *const k_button_key[VRB_COUNT] = { "A", "B", "X", "Y", "MoveClick", "LookClick",
 	"DpadUp", "DpadDown", "DpadLeft", "DpadRight", "LShoulder", "RShoulder" };
@@ -177,6 +177,14 @@ void vrd_settings_defaults(void)
 	VrSet.aim_controller = 1;	/* Modern; Play style asks before the first new game */
 	VrSet.rumble = 1;
 	VrSet.ship_bob = 1;		/* as Parallax made it */
+	VrSet.swivel = 0;		/* a comfort choice, not the default */
+	VrSet.invert_look = 0;
+	VrSet.cockpit = 0;		/* a comfort choice, not the default */
+	VrSet.classic_follow = 1;
+	VrSet.classic_size = 3;		/* 100%: the picture fills the view */
+	VrSet.classic_height = 4;
+	VrSet.third_person = 0;
+	VrSet.book_float = 0;		/* the game manual in the off hand, like a book */
 	VrSet.hud_size = 160;
 	VrSet.hud_dist = 150;
 	VrSet.hud_height = -5;
@@ -214,6 +222,14 @@ void vrd_settings_load(void)
 		else if (!strcmp(key, "VRAimController")) VrSet.aim_controller = atoi(val) != 0;
 		else if (!strcmp(key, "VRRumble")) VrSet.rumble = atoi(val) != 0;
 		else if (!strcmp(key, "VRShipBob")) VrSet.ship_bob = atoi(val) != 0;
+		else if (!strcmp(key, "VRSwivel")) VrSet.swivel = atoi(val) != 0;
+		else if (!strcmp(key, "VRInvertLook")) VrSet.invert_look = atoi(val) != 0;
+		else if (!strcmp(key, "VRCockpit")) VrSet.cockpit = clampi(atoi(val), 0, 2);
+		else if (!strcmp(key, "VRClassicFollow")) VrSet.classic_follow = atoi(val) != 0;
+		else if (!strcmp(key, "VRClassicSize")) VrSet.classic_size = clampi(atoi(val), 0, 6);
+		else if (!strcmp(key, "VRClassicHeight")) VrSet.classic_height = clampi(atoi(val), 0, 8);
+		else if (!strcmp(key, "VRThirdPerson")) VrSet.third_person = clampi(atoi(val), 0, 2);
+		else if (!strcmp(key, "VRBookFloat")) VrSet.book_float = atoi(val) != 0;
 		else if (!strcmp(key, "VRHudSize")) VrSet.hud_size = clampi(atoi(val), 40, 400);
 		else if (!strcmp(key, "VRHudDistance")) VrSet.hud_dist = clampi(atoi(val), 40, 400);
 		else if (!strcmp(key, "VRHudHeight")) VrSet.hud_height = clampi(atoi(val), -100, 100);
@@ -269,6 +285,14 @@ void vrd_settings_save(void)
 	fprintf(fp, "VRAimController=%d\n", VrSet.aim_controller);
 	fprintf(fp, "VRRumble=%d\n", VrSet.rumble);
 	fprintf(fp, "VRShipBob=%d\n", VrSet.ship_bob);
+	fprintf(fp, "VRSwivel=%d\n", VrSet.swivel);
+	fprintf(fp, "VRInvertLook=%d\n", VrSet.invert_look);
+	fprintf(fp, "VRCockpit=%d\n", VrSet.cockpit);
+	fprintf(fp, "VRClassicFollow=%d\n", VrSet.classic_follow);
+	fprintf(fp, "VRClassicSize=%d\n", VrSet.classic_size);
+	fprintf(fp, "VRClassicHeight=%d\n", VrSet.classic_height);
+	fprintf(fp, "VRThirdPerson=%d\n", VrSet.third_person);
+	fprintf(fp, "VRBookFloat=%d\n", VrSet.book_float);
 	fprintf(fp, "VRHudSize=%d\n", VrSet.hud_size);
 	fprintf(fp, "VRHudDistance=%d\n", VrSet.hud_dist);
 	fprintf(fp, "VRHudHeight=%d\n", VrSet.hud_height);
@@ -292,19 +316,31 @@ void vrd_settings_save(void)
  * so there is no turn mode to choose), what aims, vibration. */
 #define HP_LEFT		0
 #define HP_SWAP		1
-#define HP_AIM_HAND	4
-#define HP_AIM_SHIP	5
-#define HP_RUMBLE	7
-#define HP_BOB		8
-static newmenu_item s_hand_items[9];
+#define HP_INVERT	2
+#define HP_AIM_HAND	5
+#define HP_AIM_SHIP	6
+#define HP_RUMBLE	8
+#define HP_BOB		9
+#define HP_SWIVEL	10
+#define HP_FOLLOW	11
+#define HP_CSIZE	12
+#define HP_CHEIGHT	13
+#define HP_BOOK_FLOAT	14
+static newmenu_item s_hand_items[15];
 
 static void hand_page_read(void)
 {
 	VrSet.leftorium = s_hand_items[HP_LEFT].value;
 	VrSet.swap_sticks = s_hand_items[HP_SWAP].value;
+	VrSet.invert_look = s_hand_items[HP_INVERT].value;
 	VrSet.aim_controller = s_hand_items[HP_AIM_HAND].value;
 	VrSet.rumble = s_hand_items[HP_RUMBLE].value;
 	VrSet.ship_bob = s_hand_items[HP_BOB].value;
+	VrSet.swivel = s_hand_items[HP_SWIVEL].value;
+	VrSet.classic_follow = s_hand_items[HP_FOLLOW].value;
+	VrSet.classic_size = s_hand_items[HP_CSIZE].value;
+	VrSet.classic_height = s_hand_items[HP_CHEIGHT].value;
+	VrSet.book_float = s_hand_items[HP_BOOK_FLOAT].value;
 }
 
 int vrd_ship_bob(void)
@@ -326,14 +362,22 @@ static void hand_page(void)
 	memset(s_hand_items, 0, sizeof(s_hand_items));
 	m[0].type = NM_TYPE_CHECK; m[0].text = "Leftorium (left-handed)"; m[0].value = VrSet.leftorium;
 	m[1].type = NM_TYPE_CHECK; m[1].text = "Fly with the right stick"; m[1].value = VrSet.swap_sticks;
-	m[2].type = NM_TYPE_TEXT;  m[2].text = "";
-	m[3].type = NM_TYPE_TEXT;  m[3].text = "Aim with:";
-	m[4].type = NM_TYPE_RADIO; m[4].text = "Your controller"; m[4].group = 0; m[4].value = VrSet.aim_controller;
-	m[5].type = NM_TYPE_RADIO; m[5].text = "The ship's nose"; m[5].group = 0; m[5].value = !VrSet.aim_controller;
-	m[6].type = NM_TYPE_TEXT;  m[6].text = "";
-	m[7].type = NM_TYPE_CHECK; m[7].text = "Controller vibration"; m[7].value = VrSet.rumble;
-	m[8].type = NM_TYPE_CHECK; m[8].text = "Ship bob"; m[8].value = VrSet.ship_bob;
-	newmenu_do("Hands and Aim", NULL, 9, m, hand_page_cb, NULL);
+	m[2].type = NM_TYPE_CHECK; m[2].text = "Invert look (up and down)"; m[2].value = VrSet.invert_look;
+	m[3].type = NM_TYPE_TEXT;  m[3].text = "";
+	m[4].type = NM_TYPE_TEXT;  m[4].text = "Aim with:";
+	m[5].type = NM_TYPE_RADIO; m[5].text = "Your controller"; m[5].group = 0; m[5].value = VrSet.aim_controller;
+	m[6].type = NM_TYPE_RADIO; m[6].text = "The ship's nose"; m[6].group = 0; m[6].value = !VrSet.aim_controller;
+	m[7].type = NM_TYPE_TEXT;  m[7].text = "";
+	m[8].type = NM_TYPE_CHECK; m[8].text = "Controller vibration"; m[8].value = VrSet.rumble;
+	m[9].type = NM_TYPE_CHECK; m[9].text = "Ship bob"; m[9].value = VrSet.ship_bob;
+	m[10].type = NM_TYPE_CHECK; m[10].text = "Swivel chair"; m[10].value = VrSet.swivel;
+	m[11].type = NM_TYPE_CHECK; m[11].text = "Classic cockpit follows your head"; m[11].value = VrSet.classic_follow;
+	m[12].type = NM_TYPE_SLIDER; m[12].text = "Classic cockpit size"; m[12].value = VrSet.classic_size;
+	m[12].min_value = 0; m[12].max_value = 6;
+	m[13].type = NM_TYPE_SLIDER; m[13].text = "Classic cockpit height"; m[13].value = VrSet.classic_height;
+	m[13].min_value = 0; m[13].max_value = 8;
+	m[14].type = NM_TYPE_CHECK; m[14].text = "Float the game manual"; m[14].value = VrSet.book_float;
+	newmenu_do("Hands and Aim", NULL, 15, m, hand_page_cb, NULL);
 	hand_page_read();
 }
 
@@ -507,6 +551,8 @@ static void play_style_apply(int classic)
 #endif
 	PlayerCfg.AlphaEffects = !classic;
 	PlayerCfg.DynLightColor = !classic;
+	if (VrSet.cockpit)
+		VrSet.cockpit = classic ? 2 : 1;	/* each style its own cockpit */
 	vrd_settings_save();
 	write_player_file();
 	/* The new filtering reaches textures already loaded (the GL context is
@@ -549,16 +595,43 @@ void vrd_play_style_once(void)
 		vrd_play_style_menu();
 }
 
-/* The first page: Recenter, Play style, the topic pages, Switch Game. */
+/* The first page: Recenter, the game manual, Play style, the topic pages,
+ * Switch Game. */
 #define FP_RECENTER	0
-#define FP_STYLE	2
-#define FP_HANDS	3
-#define FP_SCREEN	4
-#define FP_CONTROLS	5
-#define FP_SWITCH	7
-static newmenu_item s_first_items[8];
+#define FP_MANUAL	1
+#define FP_VIEW		2
+#define FP_STYLE	4
+#define FP_HANDS	5
+#define FP_SCREEN	6
+#define FP_CONTROLS	7
+#define FP_SWITCH	9
+static newmenu_item s_first_items[10];
 static char s_switch_text[48];
 static char s_style_text[48];
+static char s_manual_text[48];
+static char s_view_text[48];
+
+const char *vrd_view_name(void)
+{
+	if (VrSet.third_person)
+		return VrSet.third_person == 2 ? "Behind, far" : "Behind, near";
+	return VrSet.cockpit == 2 ? "Classic cockpit" : VrSet.cockpit == 1 ? "Modern cockpit" : "No cockpit";
+}
+
+/* No cockpit -> Modern -> Classic -> behind, near -> behind, far -> no cockpit. */
+void vrd_cycle_view(void)
+{
+	const int v = VrSet.third_person ? 2 + VrSet.third_person : VrSet.cockpit;
+	const int n = (v + 1) % 5;
+	VrSet.third_person = n >= 3 ? n - 2 : 0;
+	if (n < 3)
+		VrSet.cockpit = n;
+}
+
+static const char *view_name(void)
+{
+	return vrd_view_name();
+}
 
 static int first_page_cb(newmenu *menu, d_event *event, void *userdata)
 {
@@ -567,6 +640,19 @@ static int first_page_cb(newmenu *menu, d_event *event, void *userdata)
 		return 0;
 	switch (newmenu_get_citem(menu)) {
 	case FP_RECENTER: vrd_recenter(); return 1;
+	case FP_MANUAL:
+		if (!vrd_book_open()) {
+			/* No book yet: say so on the row itself (a message box is laid out
+			 * for the monitor and runs off the panel). */
+			snprintf(s_manual_text, sizeof(s_manual_text), "Game Manual: run Setup again");
+			vrxr_log("VR: Game Manual chosen, but there is no tome\\tome.txt beside the game");
+		}
+		return 1;
+	case FP_VIEW:
+		vrd_cycle_view();
+		snprintf(s_view_text, sizeof(s_view_text), "View: %s", view_name());
+		vrxr_log("VR: view: %s", view_name());
+		return 1;
 	case FP_STYLE:
 		vrd_play_style_menu();
 		snprintf(s_style_text, sizeof(s_style_text), "Play style: %s...",
@@ -588,19 +674,24 @@ void vrd_options_menu(void)
 	snprintf(s_switch_text, sizeof(s_switch_text), "Switch to %s", vrd_other_game_name());
 	memset(s_first_items, 0, sizeof(s_first_items));
 	m[0].type = NM_TYPE_MENU; m[0].text = "Recenter";
-	m[1].type = NM_TYPE_TEXT; m[1].text = "";
+	snprintf(s_manual_text, sizeof(s_manual_text), "Game Manual");
+	m[1].type = NM_TYPE_MENU; m[1].text = s_manual_text;
+	snprintf(s_view_text, sizeof(s_view_text), "View: %s", view_name());
+	m[2].type = NM_TYPE_MENU; m[2].text = s_view_text;
+	m[3].type = NM_TYPE_TEXT; m[3].text = "";
 	snprintf(s_style_text, sizeof(s_style_text), "Play style: %s...",
 		VrSet.play_style == 1 ? "Classic" : "Modern");
-	m[2].type = NM_TYPE_MENU; m[2].text = s_style_text;
-	m[3].type = NM_TYPE_MENU; m[3].text = "Hands and Aim...";
-	m[4].type = NM_TYPE_MENU; m[4].text = "HUD and Observer View...";
-	m[5].type = NM_TYPE_MENU; m[5].text = "Controls...";
-	m[6].type = NM_TYPE_TEXT; m[6].text = "";
-	m[7].type = NM_TYPE_MENU; m[7].text = s_switch_text;
+	m[4].type = NM_TYPE_MENU; m[4].text = s_style_text;
+	m[5].type = NM_TYPE_MENU; m[5].text = "Hands and Aim...";
+	m[6].type = NM_TYPE_MENU; m[6].text = "HUD and Observer View...";
+	m[7].type = NM_TYPE_MENU; m[7].text = "Controls...";
+	m[8].type = NM_TYPE_TEXT; m[8].text = "";
+	m[9].type = NM_TYPE_MENU; m[9].text = s_switch_text;
 	/* Switch Game only when the other game is installed. */
-	newmenu_do("VR Options", NULL, vrd_switch_available() ? 8 : 6, m, first_page_cb, NULL);
+	newmenu_do("VR Options", NULL, vrd_switch_available() ? 10 : 8, m, first_page_cb, NULL);
 	vrd_settings_save();
-	vrxr_log("VR: VR Options closed; settings saved (Leftorium %d, swap sticks %d, aim %s, vibration %d, ship bob %d, observer view %s)",
+	vrxr_log("VR: VR Options closed; settings saved (Leftorium %d, swap sticks %d, aim %s, vibration %d, ship bob %d, swivel chair %d, invert look %d, cockpit %d (classic: follow %d, size %d, height %d), view %s, observer view %s, manual %s)",
 		VrSet.leftorium, VrSet.swap_sticks, VrSet.aim_controller ? "controller" : "ship",
-		VrSet.rumble, VrSet.ship_bob, VrSet.desktop_view ? "steady" : "left eye");
+		VrSet.rumble, VrSet.ship_bob, VrSet.swivel, VrSet.invert_look, VrSet.cockpit, VrSet.classic_follow, VrSet.classic_size, VrSet.classic_height, view_name(), VrSet.desktop_view ? "steady" : "left eye",
+		VrSet.book_float ? "floating" : "in hand");
 }
