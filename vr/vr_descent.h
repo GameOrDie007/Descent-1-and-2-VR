@@ -125,8 +125,10 @@ void vrd_after_exit(void);
 #define VRB_DPAD_RIGHT	9
 #define VRB_LSHOULDER	10
 #define VRB_RSHOULDER	11
-#define VRB_COUNT	12
-#define VRB_TOUCH_COUNT	6	/* Touch and Index have the first six */
+#define VRB_LGRIP	12	/* the grips, on every controller */
+#define VRB_RGRIP	13
+#define VRB_COUNT	14
+#define VRB_TOUCH_COUNT	6	/* Touch and Index have the first six, then the grips */
 
 #define VRA_NONE		0
 #define VRA_SLIDE_UP		1
@@ -144,7 +146,9 @@ void vrd_after_exit(void);
 #define VRA_BANK_LEFT		13
 #define VRA_BANK_RIGHT		14
 #define VRA_CHANGE_VIEW		15	/* the View setting's next choice (vrd_cycle_view) */
-#define VRA_COUNT		16
+#define VRA_SLIDE_LEFT		16
+#define VRA_SLIDE_RIGHT		17
+#define VRA_COUNT		18
 
 #define VRD_FAMILY_TOUCH	0
 #define VRD_FAMILY_INDEX	1
@@ -169,6 +173,11 @@ typedef struct vrd_settings {
 	int classic_height;		/* the Classic cockpit's height, 0..8: 4 the default, 1.5 degrees a step */
 	int third_person;		/* 0 the cockpit, 1 behind the ship (near), 2 behind it (far) */
 	int book_float;			/* the game manual floats in front instead of in the off hand */
+	int stick_layout;		/* 0 standard; 1 FPV (drone, mode 2): left stick up/down and turn, right stick pitch and bank, grips forward and back */
+	int aim_head;			/* with aim_controller: aim where you look instead of with the hand */
+	int head_steer;			/* the ship turns toward where you look (yaw and pitch) */
+	int motion_fly;			/* hold a grip: move that controller up or down to slide, twist it to bank */
+	int world_size;			/* percent, 50-200: under 100 the mine is smaller round you (stronger depth) */
 	int bind[VRD_FAMILIES][VRB_COUNT];	/* VRA_* per button, per controller family */
 } vrd_settings;
 extern vrd_settings VrSet;
@@ -215,7 +224,8 @@ int vrd_action_allowed(int action);		/* this game has it */
 const char *vrd_action_name(int action);
 const char *vrd_button_name(int family, int button);
 int vrd_family(void);				/* VRD_FAMILY_* of the controllers in hand */
-int vrd_family_buttons(int family);		/* how many VRB_* it has */
+int vrd_family_buttons(int family);		/* how many VRB_* it has (rows on the Controls page) */
+int vrd_family_button(int family, int row);	/* the VRB_* on that row */
 
 /* VR Options: the pause menu's row and Options' first row open it. */
 void vrd_options_menu(void);

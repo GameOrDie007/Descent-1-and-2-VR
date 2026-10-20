@@ -44,15 +44,16 @@ static const char *const k_cfg = "vr.cfg";
 static const char *const k_action_key[VRA_COUNT] = {
 	"none", "slideup", "slidedown", "nextprimary", "nextsecondary", "flare",
 	"bomb", "rearview", "automap", "recenter", "afterburner", "headlight",
-	"energyshield", "bankleft", "bankright", "changeview"
+	"energyshield", "bankleft", "bankright", "changeview", "slideleft", "slideright"
 };
 static const char *const k_action_name[VRA_COUNT] = {
 	"(none)", "Slide up", "Slide down", "Next primary", "Next secondary",
 	"Fire flare", "Drop bomb", "Rear view", "Automap", "Recenter", "Afterburner",
-	"Headlight", "Energy to shield", "Bank left", "Bank right", "Change view"
+	"Headlight", "Energy to shield", "Bank left", "Bank right", "Change view",
+	"Slide left", "Slide right"
 };
 static const char *const k_button_key[VRB_COUNT] = { "A", "B", "X", "Y", "MoveClick", "LookClick",
-	"DpadUp", "DpadDown", "DpadLeft", "DpadRight", "LShoulder", "RShoulder" };
+	"DpadUp", "DpadDown", "DpadLeft", "DpadRight", "LShoulder", "RShoulder", "LGrip", "RGrip" };
 static const char *const k_family_key[VRD_FAMILIES] = { "Touch", "Index", "Frame" };
 
 int vrd_action_allowed(int action)
@@ -82,7 +83,21 @@ int vrd_family(void)
 
 int vrd_family_buttons(int family)
 {
-	return family == VRD_FAMILY_FRAME ? VRB_COUNT : VRB_TOUCH_COUNT;
+	return family == VRD_FAMILY_FRAME ? VRB_COUNT : VRB_TOUCH_COUNT + 2;
+}
+
+/* The Controls page's rows: the face buttons and stick clicks, the grips,
+ * then the Frame's D-pad and shoulder buttons. */
+int vrd_family_button(int family, int row)
+{
+	(void)family;
+	if (row < VRB_TOUCH_COUNT)
+		return row;
+	if (row == VRB_TOUCH_COUNT)
+		return VRB_LGRIP;
+	if (row == VRB_TOUCH_COUNT + 1)
+		return VRB_RGRIP;
+	return row - 2;
 }
 
 /* The button's printed name, as the player's hands hold it now: with the
@@ -90,6 +105,10 @@ int vrd_family_buttons(int family)
 const char *vrd_button_name(int family, int button)
 {
 	const int left = VrSet.leftorium, swap = VrSet.swap_sticks;
+	if (button == VRB_LGRIP)
+		return "Left grip";
+	if (button == VRB_RGRIP)
+		return "Right grip";
 	if (button == VRB_MOVECLICK)
 		return swap ? "R stick click" : "L stick click";
 	if (family == VRD_FAMILY_FRAME) {
@@ -136,8 +155,10 @@ void vrd_bind_defaults(int family)
 	int i;
 	for (i = 0; i < VRB_COUNT; i++)
 		b[i] = VRA_NONE;
-	/* The grips raise and lower the ship (fixed); A and B bank, which few
+	/* The grips raise and lower the ship, analog; A and B bank, which few
 	 * players need often. */
+	b[VRB_LGRIP] = VRA_SLIDE_UP;
+	b[VRB_RGRIP] = VRA_SLIDE_DOWN;
 	b[VRB_A] = VRA_BANK_LEFT;
 	b[VRB_B] = VRA_BANK_RIGHT;
 	b[VRB_X] = VRA_NEXT_PRIMARY;
@@ -175,6 +196,7 @@ void vrd_settings_defaults(void)
 	VrSet.leftorium = 0;
 	VrSet.swap_sticks = 0;
 	VrSet.aim_controller = 1;	/* Modern; Play style asks before the first new game */
+	VrSet.aim_head = 0;
 	VrSet.rumble = 1;
 	VrSet.ship_bob = 1;		/* as Parallax made it */
 	VrSet.swivel = 0;		/* a comfort choice, not the default */
@@ -185,6 +207,10 @@ void vrd_settings_defaults(void)
 	VrSet.classic_height = 4;
 	VrSet.third_person = 0;
 	VrSet.book_float = 0;		/* the game manual in the off hand, like a book */
+	VrSet.head_steer = 0;		/* options; the sticks fly by default */
+	VrSet.stick_layout = 0;		/* the sticks as shipped; FPV is a choice */
+	VrSet.motion_fly = 0;
+	VrSet.world_size = 100;		/* the mine as made: one mine unit a metre */
 	VrSet.hud_size = 160;
 	VrSet.hud_dist = 150;
 	VrSet.hud_height = -5;
@@ -220,6 +246,8 @@ void vrd_settings_load(void)
 		if (!strcmp(key, "VRLeftorium")) VrSet.leftorium = atoi(val) != 0;
 		else if (!strcmp(key, "VRSwapSticks")) VrSet.swap_sticks = atoi(val) != 0;
 		else if (!strcmp(key, "VRAimController")) VrSet.aim_controller = atoi(val) != 0;
+		else if (!strcmp(key, "VRAimHead")) VrSet.aim_head = atoi(val) != 0;
+		else if (!strcmp(key, "VRStickLayout")) VrSet.stick_layout = clampi(atoi(val), 0, 1);
 		else if (!strcmp(key, "VRRumble")) VrSet.rumble = atoi(val) != 0;
 		else if (!strcmp(key, "VRShipBob")) VrSet.ship_bob = atoi(val) != 0;
 		else if (!strcmp(key, "VRSwivel")) VrSet.swivel = atoi(val) != 0;
@@ -230,6 +258,9 @@ void vrd_settings_load(void)
 		else if (!strcmp(key, "VRClassicHeight")) VrSet.classic_height = clampi(atoi(val), 0, 8);
 		else if (!strcmp(key, "VRThirdPerson")) VrSet.third_person = clampi(atoi(val), 0, 2);
 		else if (!strcmp(key, "VRBookFloat")) VrSet.book_float = atoi(val) != 0;
+		else if (!strcmp(key, "VRHeadSteering")) VrSet.head_steer = atoi(val) != 0;
+		else if (!strcmp(key, "VRMotionFlying")) VrSet.motion_fly = atoi(val) != 0;
+		else if (!strcmp(key, "VRWorldSize")) VrSet.world_size = clampi(atoi(val), 50, 200);
 		else if (!strcmp(key, "VRHudSize")) VrSet.hud_size = clampi(atoi(val), 40, 400);
 		else if (!strcmp(key, "VRHudDistance")) VrSet.hud_dist = clampi(atoi(val), 40, 400);
 		else if (!strcmp(key, "VRHudHeight")) VrSet.hud_height = clampi(atoi(val), -100, 100);
@@ -283,6 +314,8 @@ void vrd_settings_save(void)
 	fprintf(fp, "VRLeftorium=%d\n", VrSet.leftorium);
 	fprintf(fp, "VRSwapSticks=%d\n", VrSet.swap_sticks);
 	fprintf(fp, "VRAimController=%d\n", VrSet.aim_controller);
+	fprintf(fp, "VRAimHead=%d\n", VrSet.aim_head);
+	fprintf(fp, "VRStickLayout=%d\n", VrSet.stick_layout);
 	fprintf(fp, "VRRumble=%d\n", VrSet.rumble);
 	fprintf(fp, "VRShipBob=%d\n", VrSet.ship_bob);
 	fprintf(fp, "VRSwivel=%d\n", VrSet.swivel);
@@ -293,6 +326,9 @@ void vrd_settings_save(void)
 	fprintf(fp, "VRClassicHeight=%d\n", VrSet.classic_height);
 	fprintf(fp, "VRThirdPerson=%d\n", VrSet.third_person);
 	fprintf(fp, "VRBookFloat=%d\n", VrSet.book_float);
+	fprintf(fp, "VRHeadSteering=%d\n", VrSet.head_steer);
+	fprintf(fp, "VRMotionFlying=%d\n", VrSet.motion_fly);
+	fprintf(fp, "VRWorldSize=%d\n", VrSet.world_size);
 	fprintf(fp, "VRHudSize=%d\n", VrSet.hud_size);
 	fprintf(fp, "VRHudDistance=%d\n", VrSet.hud_dist);
 	fprintf(fp, "VRHudHeight=%d\n", VrSet.hud_height);
@@ -318,22 +354,24 @@ void vrd_settings_save(void)
 #define HP_SWAP		1
 #define HP_INVERT	2
 #define HP_AIM_HAND	5
-#define HP_AIM_SHIP	6
-#define HP_RUMBLE	8
-#define HP_BOB		9
-#define HP_SWIVEL	10
-#define HP_FOLLOW	11
-#define HP_CSIZE	12
-#define HP_CHEIGHT	13
-#define HP_BOOK_FLOAT	14
-static newmenu_item s_hand_items[15];
+#define HP_AIM_HEAD	6
+#define HP_AIM_SHIP	7
+#define HP_RUMBLE	9
+#define HP_BOB		10
+#define HP_SWIVEL	11
+#define HP_FOLLOW	12
+#define HP_CSIZE	13
+#define HP_CHEIGHT	14
+#define HP_BOOK_FLOAT	15
+static newmenu_item s_hand_items[16];
 
 static void hand_page_read(void)
 {
 	VrSet.leftorium = s_hand_items[HP_LEFT].value;
 	VrSet.swap_sticks = s_hand_items[HP_SWAP].value;
 	VrSet.invert_look = s_hand_items[HP_INVERT].value;
-	VrSet.aim_controller = s_hand_items[HP_AIM_HAND].value;
+	VrSet.aim_controller = s_hand_items[HP_AIM_HAND].value || s_hand_items[HP_AIM_HEAD].value;
+	VrSet.aim_head = s_hand_items[HP_AIM_HEAD].value;
 	VrSet.rumble = s_hand_items[HP_RUMBLE].value;
 	VrSet.ship_bob = s_hand_items[HP_BOB].value;
 	VrSet.swivel = s_hand_items[HP_SWIVEL].value;
@@ -365,19 +403,20 @@ static void hand_page(void)
 	m[2].type = NM_TYPE_CHECK; m[2].text = "Invert look (up and down)"; m[2].value = VrSet.invert_look;
 	m[3].type = NM_TYPE_TEXT;  m[3].text = "";
 	m[4].type = NM_TYPE_TEXT;  m[4].text = "Aim with:";
-	m[5].type = NM_TYPE_RADIO; m[5].text = "Your controller"; m[5].group = 0; m[5].value = VrSet.aim_controller;
-	m[6].type = NM_TYPE_RADIO; m[6].text = "The ship's nose"; m[6].group = 0; m[6].value = !VrSet.aim_controller;
-	m[7].type = NM_TYPE_TEXT;  m[7].text = "";
-	m[8].type = NM_TYPE_CHECK; m[8].text = "Controller vibration"; m[8].value = VrSet.rumble;
-	m[9].type = NM_TYPE_CHECK; m[9].text = "Ship bob"; m[9].value = VrSet.ship_bob;
-	m[10].type = NM_TYPE_CHECK; m[10].text = "Swivel chair"; m[10].value = VrSet.swivel;
-	m[11].type = NM_TYPE_CHECK; m[11].text = "Classic cockpit follows your head"; m[11].value = VrSet.classic_follow;
-	m[12].type = NM_TYPE_SLIDER; m[12].text = "Classic cockpit size"; m[12].value = VrSet.classic_size;
-	m[12].min_value = 0; m[12].max_value = 6;
-	m[13].type = NM_TYPE_SLIDER; m[13].text = "Classic cockpit height"; m[13].value = VrSet.classic_height;
-	m[13].min_value = 0; m[13].max_value = 8;
-	m[14].type = NM_TYPE_CHECK; m[14].text = "Float the game manual"; m[14].value = VrSet.book_float;
-	newmenu_do("Hands and Aim", NULL, 15, m, hand_page_cb, NULL);
+	m[5].type = NM_TYPE_RADIO; m[5].text = "Your controller"; m[5].group = 0; m[5].value = VrSet.aim_controller && !VrSet.aim_head;
+	m[6].type = NM_TYPE_RADIO; m[6].text = "Your head"; m[6].group = 0; m[6].value = VrSet.aim_controller && VrSet.aim_head;
+	m[7].type = NM_TYPE_RADIO; m[7].text = "The ship's nose"; m[7].group = 0; m[7].value = !VrSet.aim_controller;
+	m[8].type = NM_TYPE_TEXT;  m[8].text = "";
+	m[9].type = NM_TYPE_CHECK; m[9].text = "Controller vibration"; m[9].value = VrSet.rumble;
+	m[10].type = NM_TYPE_CHECK; m[10].text = "Ship bob"; m[10].value = VrSet.ship_bob;
+	m[11].type = NM_TYPE_CHECK; m[11].text = "Swivel chair"; m[11].value = VrSet.swivel;
+	m[12].type = NM_TYPE_CHECK; m[12].text = "Classic cockpit follows your head"; m[12].value = VrSet.classic_follow;
+	m[13].type = NM_TYPE_SLIDER; m[13].text = "Classic cockpit size"; m[13].value = VrSet.classic_size;
+	m[13].min_value = 0; m[13].max_value = 6;
+	m[14].type = NM_TYPE_SLIDER; m[14].text = "Classic cockpit height"; m[14].value = VrSet.classic_height;
+	m[14].min_value = 0; m[14].max_value = 8;
+	m[15].type = NM_TYPE_CHECK; m[15].text = "Float the game manual"; m[15].value = VrSet.book_float;
+	newmenu_do("Hands and Aim", NULL, 16, m, hand_page_cb, NULL);
 	hand_page_read();
 }
 
@@ -466,20 +505,93 @@ static void screen_page(void)
 	screen_page_read();
 }
 
+/* Flying and World Size: the ways to fly besides the sticks, and the mine's
+ * scale against the player. */
+#define FL_HEAD		0
+#define FL_MOTION	1
+#define FL_WORLD	3
+static newmenu_item s_fly_items[10];
+static char s_world_text[32];
+#define WORLD_AT(v)	(50 + 25 * (v))	/* 50-200 percent */
+
+static void flying_page_read(void)
+{
+	VrSet.head_steer = s_fly_items[FL_HEAD].value;
+	VrSet.motion_fly = s_fly_items[FL_MOTION].value;
+	VrSet.world_size = WORLD_AT(s_fly_items[FL_WORLD].value);
+	snprintf(s_world_text, sizeof(s_world_text), "World size: %d%%", VrSet.world_size);
+}
+
+static int flying_page_cb(newmenu *menu, d_event *event, void *userdata)
+{
+	(void)menu; (void)userdata;
+	if (event->type == EVENT_NEWMENU_CHANGED)
+		flying_page_read();	/* World size changes live, so it can be judged in place */
+	return 0;
+}
+
+static void flying_page(void)
+{
+	newmenu_item *m = s_fly_items;
+	memset(s_fly_items, 0, sizeof(s_fly_items));
+	m[FL_HEAD].type = NM_TYPE_CHECK; m[FL_HEAD].text = "Head steering"; m[FL_HEAD].value = VrSet.head_steer;
+	m[FL_MOTION].type = NM_TYPE_CHECK; m[FL_MOTION].text = "Motion flying (grips)"; m[FL_MOTION].value = VrSet.motion_fly;
+	m[2].type = NM_TYPE_TEXT; m[2].text = "";
+	snprintf(s_world_text, sizeof(s_world_text), "World size: %d%%", clampi(VrSet.world_size, 50, 200));
+	slider(&m[FL_WORLD], s_world_text, (clampi(VrSet.world_size, 50, 200) - 50 + 12) / 25, 6);
+	m[4].type = NM_TYPE_TEXT; m[4].text = "";
+	m[5].type = NM_TYPE_TEXT; m[5].text = "Head steering: fly where you look.";
+	m[6].type = NM_TYPE_TEXT; m[6].text = "Motion flying: left grip, move it";
+	m[7].type = NM_TYPE_TEXT; m[7].text = "to slide; right grip, twist to bank.";
+	m[8].type = NM_TYPE_TEXT; m[8].text = "World size: 100% is as made;";
+	m[9].type = NM_TYPE_TEXT; m[9].text = "lower: a smaller mine, more depth.";
+	newmenu_do("Flying", NULL, 10, m, flying_page_cb, NULL);	/* titles: 18 characters at most */
+	flying_page_read();
+}
+
 /* Controls: one row per mappable button; choosing a row moves it to the next
  * action no other button has.  To swap two, set one to (none) first. */
 static int s_ctl_rows;
 #define CP_RESET	(s_ctl_rows + 1)
-static newmenu_item s_ctl_items[VRB_COUNT + 8];	/* rows, a gap, Reset, a gap, three lines of text */
+#define CP_LAYOUT	(s_ctl_rows + 2)
+static newmenu_item s_ctl_items[VRB_COUNT + 9];	/* rows, a gap, Reset, Stick layout, a gap, three lines of text */
+static char s_layout_text[48];
 static char s_ctl_text[VRB_COUNT][64];
 static int s_ctl_family;
 
 static void ctl_rows(void)
 {
-	int b;
-	for (b = 0; b < s_ctl_rows; b++)
-		snprintf(s_ctl_text[b], sizeof(s_ctl_text[b]), "%s: %s",
+	int r;
+	for (r = 0; r < s_ctl_rows; r++) {
+		const int b = vrd_family_button(s_ctl_family, r);
+		snprintf(s_ctl_text[r], sizeof(s_ctl_text[r]), "%s: %s",
 			vrd_button_name(s_ctl_family, b), vrd_action_name(VrSet.bind[s_ctl_family][b]));
+	}
+	snprintf(s_layout_text, sizeof(s_layout_text), "Stick layout: %s", VrSet.stick_layout ? "FPV (drone)" : "Standard");
+	if (s_ctl_items[CP_LAYOUT + 2].type == NM_TYPE_TEXT) {
+		s_ctl_items[CP_LAYOUT + 2].text = VrSet.stick_layout ? "FPV: left stick up, down, turn;" : "Fixed: triggers fire, sticks fly,";
+		s_ctl_items[CP_LAYOUT + 3].text = VrSet.stick_layout ? "right stick pitch, bank; grips" : "Menu pauses, both grips held";
+		s_ctl_items[CP_LAYOUT + 4].text = VrSet.stick_layout ? "forward, back. Both held: recenter." : "recenter. Keyboard: Home recenters.";
+	}
+}
+
+/* FPV takes the sticks' strafing away: A and B slide instead of banking
+ * (the right stick banks), and back again, when they are still as shipped. */
+static void ctl_layout_toggle(void)
+{
+	int f;
+	VrSet.stick_layout = !VrSet.stick_layout;
+	for (f = 0; f < VRD_FAMILIES; f++) {
+		int *b = VrSet.bind[f];
+		if (VrSet.stick_layout && b[VRB_A] == VRA_BANK_LEFT && b[VRB_B] == VRA_BANK_RIGHT) {
+			b[VRB_A] = VRA_SLIDE_LEFT;
+			b[VRB_B] = VRA_SLIDE_RIGHT;
+		} else if (!VrSet.stick_layout && b[VRB_A] == VRA_SLIDE_LEFT && b[VRB_B] == VRA_SLIDE_RIGHT) {
+			b[VRB_A] = VRA_BANK_LEFT;
+			b[VRB_B] = VRA_BANK_RIGHT;
+		}
+	}
+	vrxr_log("VR: stick layout %s", VrSet.stick_layout ? "FPV" : "standard");
 }
 
 static void ctl_cycle(int button)
@@ -491,7 +603,7 @@ static void ctl_cycle(int button)
 		a = (a + 1) % VRA_COUNT;
 		if (!vrd_action_allowed(a))
 			continue;
-		for (b = 0; b < s_ctl_rows; b++)
+		for (b = 0; b < VRB_COUNT; b++)
 			if (b != button && a != VRA_NONE && bind[b] == a)
 				taken = 1;	/* a button never does two jobs: skip it */
 		if (!taken)
@@ -506,9 +618,11 @@ static int ctl_page_cb(newmenu *menu, d_event *event, void *userdata)
 	if (event->type == EVENT_NEWMENU_SELECTED) {
 		const int c = newmenu_get_citem(menu);
 		if (c >= 0 && c < s_ctl_rows)
-			ctl_cycle(c);
+			ctl_cycle(vrd_family_button(s_ctl_family, c));
 		else if (c == CP_RESET)
 			vrd_bind_defaults(s_ctl_family);
+		else if (c == CP_LAYOUT)
+			ctl_layout_toggle();
 		ctl_rows();
 		return 1;	/* stay on the page */
 	}
@@ -530,11 +644,12 @@ static void ctl_page(void)
 	}
 	m[n].type = NM_TYPE_TEXT; m[n].text = ""; n++;
 	m[n].type = NM_TYPE_MENU; m[n].text = "Reset to defaults"; n++;
+	m[n].type = NM_TYPE_MENU; m[n].text = s_layout_text; n++;
 	m[n].type = NM_TYPE_TEXT; m[n].text = ""; n++;
-	m[n].type = NM_TYPE_TEXT; m[n].text = "Fixed: triggers fire,"; n++;
-	m[n].type = NM_TYPE_TEXT; m[n].text = "sticks fly, left grip raises,"; n++;
-	m[n].type = NM_TYPE_TEXT; m[n].text = "right grip lowers, Menu pauses,"; n++;
-	m[n].type = NM_TYPE_TEXT; m[n].text = "both grips held recenter."; n++;
+	m[n].type = NM_TYPE_TEXT; n++;
+	m[n].type = NM_TYPE_TEXT; n++;
+	m[n].type = NM_TYPE_TEXT; n++;
+	ctl_rows();	/* the layout row and the fixed lines */
 	newmenu_do("Controls", s_ctl_family == VRD_FAMILY_FRAME ? "Steam Frame controllers" :
 		s_ctl_family == VRD_FAMILY_INDEX ? "Valve Index controllers" :
 		(VrSet.leftorium ? "Quest Touch (Leftorium)" : "Quest Touch"),
@@ -546,6 +661,7 @@ static void play_style_apply(int classic)
 {
 	VrSet.play_style = classic ? 1 : 0;
 	VrSet.aim_controller = !classic;
+	VrSet.aim_head = 0;
 #ifdef OGL
 	GameCfg.TexFilt = classic ? 0 : (ogl_maxanisotropy > 1.0f ? 3 : 2);
 #endif
@@ -602,10 +718,11 @@ void vrd_play_style_once(void)
 #define FP_VIEW		2
 #define FP_STYLE	4
 #define FP_HANDS	5
-#define FP_SCREEN	6
-#define FP_CONTROLS	7
-#define FP_SWITCH	9
-static newmenu_item s_first_items[10];
+#define FP_FLYING	6
+#define FP_SCREEN	7
+#define FP_CONTROLS	8
+#define FP_SWITCH	10
+static newmenu_item s_first_items[11];
 static char s_switch_text[48];
 static char s_style_text[48];
 static char s_manual_text[48];
@@ -659,6 +776,7 @@ static int first_page_cb(newmenu *menu, d_event *event, void *userdata)
 			VrSet.play_style == 1 ? "Classic" : "Modern");
 		return 1;
 	case FP_HANDS:    hand_page(); return 1;
+	case FP_FLYING:   flying_page(); return 1;
 	case FP_SCREEN:   screen_page(); return 1;
 	case FP_CONTROLS: ctl_page(); return 1;
 	case FP_SWITCH:   vrd_switch_game(); return 0;	/* closes the page */
@@ -683,15 +801,16 @@ void vrd_options_menu(void)
 		VrSet.play_style == 1 ? "Classic" : "Modern");
 	m[4].type = NM_TYPE_MENU; m[4].text = s_style_text;
 	m[5].type = NM_TYPE_MENU; m[5].text = "Hands and Aim...";
-	m[6].type = NM_TYPE_MENU; m[6].text = "HUD and Observer View...";
-	m[7].type = NM_TYPE_MENU; m[7].text = "Controls...";
-	m[8].type = NM_TYPE_TEXT; m[8].text = "";
-	m[9].type = NM_TYPE_MENU; m[9].text = s_switch_text;
+	m[6].type = NM_TYPE_MENU; m[6].text = "Flying and World Size...";
+	m[7].type = NM_TYPE_MENU; m[7].text = "HUD and Observer View...";
+	m[8].type = NM_TYPE_MENU; m[8].text = "Controls...";
+	m[9].type = NM_TYPE_TEXT; m[9].text = "";
+	m[10].type = NM_TYPE_MENU; m[10].text = s_switch_text;
 	/* Switch Game only when the other game is installed. */
-	newmenu_do("VR Options", NULL, vrd_switch_available() ? 10 : 8, m, first_page_cb, NULL);
+	newmenu_do("VR Options", NULL, vrd_switch_available() ? 11 : 9, m, first_page_cb, NULL);
 	vrd_settings_save();
-	vrxr_log("VR: VR Options closed; settings saved (Leftorium %d, swap sticks %d, aim %s, vibration %d, ship bob %d, swivel chair %d, invert look %d, cockpit %d (classic: follow %d, size %d, height %d), view %s, observer view %s, manual %s)",
-		VrSet.leftorium, VrSet.swap_sticks, VrSet.aim_controller ? "controller" : "ship",
-		VrSet.rumble, VrSet.ship_bob, VrSet.swivel, VrSet.invert_look, VrSet.cockpit, VrSet.classic_follow, VrSet.classic_size, VrSet.classic_height, view_name(), VrSet.desktop_view ? "steady" : "left eye",
+	vrxr_log("VR: VR Options closed; settings saved (Leftorium %d, swap sticks %d, aim %s, vibration %d, ship bob %d, swivel chair %d, stick layout %s, head steering %d, motion flying %d, world size %d%%, invert look %d, cockpit %d (classic: follow %d, size %d, height %d), view %s, observer view %s, manual %s)",
+		VrSet.leftorium, VrSet.swap_sticks, !VrSet.aim_controller ? "ship" : VrSet.aim_head ? "head" : "controller",
+		VrSet.rumble, VrSet.ship_bob, VrSet.swivel, VrSet.stick_layout ? "FPV" : "standard", VrSet.head_steer, VrSet.motion_fly, VrSet.world_size, VrSet.invert_look, VrSet.cockpit, VrSet.classic_follow, VrSet.classic_size, VrSet.classic_height, view_name(), VrSet.desktop_view ? "steady" : "left eye",
 		VrSet.book_float ? "floating" : "in hand");
 }

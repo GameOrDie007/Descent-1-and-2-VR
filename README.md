@@ -27,13 +27,14 @@ Descent (left) and Descent 2 (right), as the observer view shows them on the mon
 ## What you get
 
 * Both games in full stereo at your headset's frame rate, with head tracking
-* Aim with your controller, or fly the way Parallax made it: a Play style question (Modern or Classic) the first time you start a new game, changeable any time
+* Aim with your controller or your head, or fly the way Parallax made it: a Play style question (Modern or Classic) the first time you start a new game, changeable any time
 * **View:** no cockpit, a Modern cockpit built round you with live gauges in the dash, the original Classic cockpit picture in front of you, or your ship from behind, near or far
 * **Game Manual:** the game's own manual as a book in your hand, with our pages on playing in VR and pages for your own notes, written with a pen. Setup makes it from the manual.pdf that comes with your copy
 * Menus, briefings, movies and the HUD on a screen in front of you; point and click with the right grip
 * Switch Game: jump from Descent to Descent 2 and back from the main menu
 * A steady full screen view on your monitor for streaming and recording (Alt+Enter for a window)
-* Photo mode, a left-handed mode (Leftorium), Swivel chair (turn the ship by turning your body), Invert look, vibration, a Ship bob switch, and a Controls page to put any action on any button
+* Photo mode, a left-handed mode (Leftorium), Swivel chair (turn the ship by turning your body), Invert look, vibration, a Ship bob switch, and a Controls page to put any action on any button, the grips included
+* **Flying and World Size:** Head steering (the ship turns where you look), Motion flying (left grip and move the controller up or down to slide, right grip and twist to bank) and World size (scale the mine around you for stronger depth)
 * Played with Meta Quest Touch controllers; Valve Index and Steam Frame layouts are included
 
 ## Standalone on Meta Quest 3
@@ -59,7 +60,7 @@ The Quest download runs on a Valve Steam Frame with no PC, under Lepton (the Fra
 | Right stick click | drop a bomb |
 | Menu button | pause menu |
 
-A, B, X, Y and the stick clicks can be changed in the pause menu under VR Options, Controls.
+A, B, X, Y, the stick clicks and the grips can be changed in the pause menu under VR Options, Controls. On the keyboard, Home recenters. Fly drones? Stick layout: FPV (drone) on the same page puts climb and turn on the left stick, pitch and bank on the right, and forward and back on the grips.
 
 ## For tools and hubs
 

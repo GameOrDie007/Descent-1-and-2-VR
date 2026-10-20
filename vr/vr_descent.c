@@ -75,6 +75,15 @@
  * lean carries both follow it. */
 #define VRD_UNITS_PER_METRE 1.0f
 
+/* With World size: a bigger world is fewer mine units per metre of the
+ * player, so the eyes sit closer together in the mine and a lean carries
+ * less far; a smaller one the other way round.  Nothing is stretched. */
+static float units_per_metre(void)
+{
+	const int pct = VrSet.world_size >= 50 && VrSet.world_size <= 200 ? VrSet.world_size : 100;
+	return VRD_UNITS_PER_METRE * 100.0f / (float)pct;
+}
+
 /* The panel's size and distance are VR settings (VrSet, vr_options.c). */
 #define VRD_GRIP_ON		0.8f	/* a grip counts as held for the recenter chord */
 #define VRD_CHORD_FRAMES	10	/* both grips this long: recenter */
@@ -115,7 +124,15 @@ static int s_nav_dir;		/* the held menu direction key, or 0 */
 static fix64 s_nav_next;	/* when it repeats */
 static int s_btn_held[VRB_COUNT];	/* mappable buttons by role, last frame */
 static int s_lgrip_frames, s_rgrip_frames, s_chord_done;
-static float s_roll;		/* the bank the grips ask for, after the chord's wait */
+static float s_roll;		/* the slide the grips ask for (down positive), after the chord's wait */
+static int s_grip_on[2];	/* a grip mapped to a button action, held (with hysteresis) */
+/* Motion flying: a grip held takes its controller's pose as the grab; the
+ * left one (the right with the Leftorium) slides the ship as it is raised or
+ * lowered, the other banks as it is twisted. */
+static int s_mf_grab[2];
+static float s_mf_y0[2], s_mf_q0[2][4];
+static float s_fpv_thrust;	/* FPV stick layout: the grips' forward (right) and back (left), -1..1 */
+static float s_mf_vert, s_mf_bank;	/* this frame's slide (up +) and bank (left +), -1..1 */
 static int s_photo;		/* photo mode: the menu over the paused game is hidden */
 static int s_kb, s_kb_row, s_kb_col;	/* the on-screen keyboard over a text field */
 /* The splash: 1 while it is up (vrsplash.png, Game Or Die's art). */
@@ -223,7 +240,7 @@ void vrd_startup(void)
 	vrxr_log_start(VRD_LOG_TITLE);
 	vrd_settings_load();
 	vrxr_log("VR: settings: Leftorium %d, swap sticks %d, invert look %d, aim with the %s, vibration %d, observer view %s",
-		VrSet.leftorium, VrSet.swap_sticks, VrSet.invert_look, VrSet.aim_controller ? "controller" : "ship",
+		VrSet.leftorium, VrSet.swap_sticks, VrSet.invert_look, !VrSet.aim_controller ? "ship" : VrSet.aim_head ? "head" : "controller",
 		VrSet.rumble, VrSet.desktop_view ? "steady view" : "left eye");
 	if (vrxr_connect(VRD_GAME_NAME)) {
 		int w = 0, h = 0;
@@ -355,14 +372,17 @@ int vrd_menu_above_game(void)
 
 /* --- the frame ------------------------------------------------------------------ */
 
-/* The aim hand's ray this frame, turned into the ship's frame the way the
- * head is: tracking -Z ahead becomes the ship's +Z. */
+/* The aim hand's ray this frame (or the head's, with Aim with: Your head),
+ * turned into the ship's frame the way the head is: tracking -Z ahead becomes
+ * the ship's +Z. */
 static void read_controller_aim(void)
 {
 	float q[4], pos[3], x, y, z, w;
 	const int hand = VrSet.leftorium ? 0 : 1;
 	s_ctl_ok = 0;
-	if (!VrSet.aim_controller || !vrxr_hand_aim(hand, q, pos))
+	if (!VrSet.aim_controller)
+		return;
+	if (VrSet.aim_head ? !vrxr_head(q, pos) : !vrxr_hand_aim(hand, q, pos))
 		return;
 	swivel_q(q, q);
 	swivel_v(pos);
@@ -930,9 +950,9 @@ static void find_aim_point(const vms_vector *base_pos, const vms_matrix *base_or
 
 	if (s_ctl_ok && Viewer == ConsoleObject && !Rear_view) {
 		/* Aim with the controller: its own ray, from where it is in the cockpit. */
-		vm_vec_scale_add2(&start, (vms_vector *)&base_orient->rvec, fl2f(s_ctl_pos[0] * VRD_UNITS_PER_METRE));
-		vm_vec_scale_add2(&start, (vms_vector *)&base_orient->uvec, fl2f(s_ctl_pos[1] * VRD_UNITS_PER_METRE));
-		vm_vec_scale_add2(&start, (vms_vector *)&base_orient->fvec, fl2f(s_ctl_pos[2] * VRD_UNITS_PER_METRE));
+		vm_vec_scale_add2(&start, (vms_vector *)&base_orient->rvec, fl2f(s_ctl_pos[0] * units_per_metre()));
+		vm_vec_scale_add2(&start, (vms_vector *)&base_orient->uvec, fl2f(s_ctl_pos[1] * units_per_metre()));
+		vm_vec_scale_add2(&start, (vms_vector *)&base_orient->fvec, fl2f(s_ctl_pos[2] * units_per_metre()));
 		vm_vec_zero(&dir);
 		vm_vec_scale_add2(&dir, (vms_vector *)&base_orient->rvec, fl2f(s_ctl_dir[0]));
 		vm_vec_scale_add2(&dir, (vms_vector *)&base_orient->uvec, fl2f(s_ctl_dir[1]));
@@ -1093,9 +1113,12 @@ void vrd_eye_view(vms_vector *eye_pos, vms_matrix *eye_orient,
 	vm_matrix_x_matrix(eye_orient, (vms_matrix *)cam_orient, &headm);
 
 	/* The eye's position: the tracking-space offset, in the ship's frame. */
-	d[0] = ep[0] * VRD_UNITS_PER_METRE;
-	d[1] = ep[1] * VRD_UNITS_PER_METRE;
-	d[2] = -ep[2] * VRD_UNITS_PER_METRE;
+	{
+		const float u = units_per_metre();
+		d[0] = ep[0] * u;
+		d[1] = ep[1] * u;
+		d[2] = -ep[2] * u;
+	}
 	*eye_pos = *cam_pos;
 	vm_vec_scale_add2(eye_pos, (vms_vector *)&cam_orient->rvec, fl2f(d[0]));
 	vm_vec_scale_add2(eye_pos, (vms_vector *)&cam_orient->uvec, fl2f(d[1]));
@@ -1290,6 +1313,8 @@ static void release_game_controls(void)
 	set_bit(&Controls.btn_slide_down_state, 0);
 	set_bit(&Controls.btn_bank_left_state, 0);
 	set_bit(&Controls.btn_bank_right_state, 0);
+	set_bit(&Controls.btn_slide_left_state, 0);
+	set_bit(&Controls.btn_slide_right_state, 0);
 #ifdef VRD_DESCENT2
 	set_bit(&Controls.afterburner_state, 0);
 	set_bit(&Controls.energy_to_shield_state, 0);
@@ -1530,6 +1555,8 @@ static void apply_actions(const int held[VRB_COUNT], const int edge[VRB_COUNT])
 	set_bit(&Controls.btn_slide_down_state, act_held[VRA_SLIDE_DOWN]);
 	set_bit(&Controls.btn_bank_left_state, act_held[VRA_BANK_LEFT]);
 	set_bit(&Controls.btn_bank_right_state, act_held[VRA_BANK_RIGHT]);
+	set_bit(&Controls.btn_slide_left_state, act_held[VRA_SLIDE_LEFT]);
+	set_bit(&Controls.btn_slide_right_state, act_held[VRA_SLIDE_RIGHT]);
 	if (act_edge[VRA_NEXT_PRIMARY]) Controls.cycle_primary_count++;
 	if (act_edge[VRA_NEXT_SECONDARY]) Controls.cycle_secondary_count++;
 	if (act_edge[VRA_FLARE]) Controls.fire_flare_count++;
@@ -1548,30 +1575,160 @@ static void apply_actions(const int held[VRB_COUNT], const int edge[VRB_COUNT])
 #endif
 }
 
-/* The grips: left raises the ship, right lowers it; both held is the Game
- * Or Die recenter chord, in play and in menus.  A lone grip waits a few
- * frames for the other before it moves the ship, so a chord never starts as
- * a climb. */
-static void grips(const vr_phys_input *p)
+/* The grips: by default left raises the ship and right lowers it, analog;
+ * either can be mapped to another action on the Controls page.  Both held is
+ * the Game Or Die recenter chord, in play and in menus.  A lone grip waits a
+ * few frames for the other before it acts, so a chord never starts as a climb.
+ * With Motion flying the grips grab instead (motion_grips). */
+static float twist_z(const float q0[4], const float q[4])
 {
+	/* conj(q0) * q, then its twist about the controller's own Z axis. */
+	const float x = q0[3] * q[0] - q0[0] * q[3] - q0[1] * q[2] + q0[2] * q[1];
+	const float y = q0[3] * q[1] + q0[0] * q[2] - q0[1] * q[3] - q0[2] * q[0];
+	const float z = q0[3] * q[2] - q0[0] * q[1] + q0[1] * q[0] - q0[2] * q[3];
+	const float w = q0[3] * q[3] + q0[0] * q[0] + q0[1] * q[1] + q0[2] * q[2];
+	float t = 2.0f * atan2f(z, w);
+	(void)x; (void)y;
+	while (t > 3.14159265f) t -= 6.28318531f;
+	while (t < -3.14159265f) t += 6.28318531f;
+	return t;
+}
+
+static float clamp1(float v)
+{
+	return v > 1.0f ? 1.0f : (v < -1.0f ? -1.0f : v);
+}
+
+#define VRD_MF_SLIDE_FULL	0.10f	/* metres up or down for full slide */
+#define VRD_MF_SLIDE_DEAD	0.015f
+#define VRD_MF_BANK_FULL	0.60f	/* radians of twist for full bank (about 35 degrees) */
+#define VRD_MF_BANK_DEAD	0.06f
+#define VRD_MF_CHORD_FRAMES	90	/* both grips this long, held still: recenter */
+
+static void motion_grips(const vr_phys_input *p)
+{
+	const float gv[2] = { p->lgrip, p->rgrip };
+	int h;
+	s_mf_vert = s_mf_bank = 0.0f;
+	for (h = 0; h < 2; h++) {
+		float q[4], pos[3];
+		const int down = s_mf_grab[h] ? gv[h] > 0.35f : gv[h] > 0.5f;
+		if (!down || !vrxr_hand_aim(h, q, pos)) {
+			s_mf_grab[h] = 0;
+			continue;
+		}
+		if (!s_mf_grab[h]) {
+			s_mf_grab[h] = 1;
+			s_mf_y0[h] = pos[1];
+			memcpy(s_mf_q0[h], q, sizeof(q));
+			continue;
+		}
+		/* One hand each, so a hand that twists never slides the ship by
+		 * drifting up or down, and the other way round. */
+		if (h == (VrSet.leftorium ? 1 : 0))
+			s_mf_vert += dead((pos[1] - s_mf_y0[h]) / VRD_MF_SLIDE_FULL, VRD_MF_SLIDE_DEAD / VRD_MF_SLIDE_FULL);
+		else	/* twisted clockwise (seen from behind) is a turn about -Z: bank right */
+			s_mf_bank += dead(twist_z(s_mf_q0[h], q) / VRD_MF_BANK_FULL, VRD_MF_BANK_DEAD / VRD_MF_BANK_FULL);
+	}
+	s_mf_vert = clamp1(s_mf_vert);
+	s_mf_bank = clamp1(s_mf_bank);
+	/* Both grips held a while with the controllers still: recenter. */
+	if (s_mf_grab[0] && s_mf_grab[1] && fabsf(s_mf_vert) < 0.2f && fabsf(s_mf_bank) < 0.2f) {
+		if (!s_chord_done && s_lgrip_frames >= VRD_MF_CHORD_FRAMES && s_rgrip_frames >= VRD_MF_CHORD_FRAMES) {
+			vrxr_log("VR: both grips held still: recenter");
+			vrd_recenter();
+			s_chord_done = 1;
+		}
+	} else if (!(s_mf_grab[0] && s_mf_grab[1])) {
+		s_chord_done = 0;
+	} else {
+		s_lgrip_frames = s_rgrip_frames = 0;	/* moving: not a chord */
+	}
+}
+
+static void grips(const vr_phys_input *p, int held[VRB_COUNT], int edge[VRB_COUNT])
+{
+	const int *bind = VrSet.bind[vrd_family()];
 	const int l = p->lgrip > VRD_GRIP_DEAD, r = p->rgrip > VRD_GRIP_DEAD;
+	const float gv[2] = { p->lgrip, p->rgrip };
+	const int gb[2] = { VRB_LGRIP, VRB_RGRIP };
+	int on[2] = { 0, 0 }, h, blocked;
+	float slide = 0.0f;
 	s_lgrip_frames = l ? s_lgrip_frames + 1 : 0;
 	s_rgrip_frames = r ? s_rgrip_frames + 1 : 0;
+	s_roll = 0.0f;
+	s_fpv_thrust = 0.0f;
+	if (VrSet.stick_layout) {
+		/* FPV: the grips are forward and back, analog; the chord still recenters,
+		 * and Motion flying stands aside (it would want the grips too). */
+		s_mf_grab[0] = s_mf_grab[1] = 0;
+		s_mf_vert = s_mf_bank = 0.0f;
+		if (p->lgrip > VRD_GRIP_ON && p->rgrip > VRD_GRIP_ON) {
+			if (!s_chord_done && s_lgrip_frames >= VRD_CHORD_FRAMES && s_rgrip_frames >= VRD_CHORD_FRAMES) {
+				vrxr_log("VR: both grips held: recenter");
+				vrd_recenter();
+				s_chord_done = 1;
+			}
+			blocked = 1;
+		} else {
+			if (!l && !r)
+				s_chord_done = 0;
+			blocked = s_chord_done || (l && !r && s_lgrip_frames < VRD_GRIP_WAIT) || (r && !l && s_rgrip_frames < VRD_GRIP_WAIT);
+		}
+		if (!blocked)
+			s_fpv_thrust = p->rgrip - p->lgrip;
+		for (h = 0; h < 2; h++) {
+			held[gb[h]] = 0;
+			edge[gb[h]] = 0;
+			s_btn_held[gb[h]] = 0;
+		}
+		s_grip_on[0] = s_grip_on[1] = 0;
+		return;
+	}
+	if (VrSet.motion_fly) {
+		motion_grips(p);
+		s_grip_on[0] = s_grip_on[1] = 0;
+		for (h = 0; h < 2; h++) {
+			held[gb[h]] = 0;
+			edge[gb[h]] = 0;
+			s_btn_held[gb[h]] = 0;
+		}
+		return;
+	}
+	s_mf_grab[0] = s_mf_grab[1] = 0;
+	s_mf_vert = s_mf_bank = 0.0f;
 	if (p->lgrip > VRD_GRIP_ON && p->rgrip > VRD_GRIP_ON) {
 		if (!s_chord_done && s_lgrip_frames >= VRD_CHORD_FRAMES && s_rgrip_frames >= VRD_CHORD_FRAMES) {
 			vrxr_log("VR: both grips held: recenter");
 			vrd_recenter();
 			s_chord_done = 1;
 		}
-		s_roll = 0.0f;
-		return;
+		blocked = 1;
+	} else {
+		if (!l && !r)
+			s_chord_done = 0;
+		blocked = s_chord_done || (l && !r && s_lgrip_frames < VRD_GRIP_WAIT) || (r && !l && s_rgrip_frames < VRD_GRIP_WAIT);
 	}
-	if (!l && !r)
-		s_chord_done = 0;
-	if (s_chord_done || (l && !r && s_lgrip_frames < VRD_GRIP_WAIT) || (r && !l && s_rgrip_frames < VRD_GRIP_WAIT))
-		s_roll = 0.0f;
-	else
-		s_roll = s_map.roll;
+	for (h = 0; h < 2; h++) {
+		const int a = bind[gb[h]];
+		if (blocked) {
+			s_grip_on[h] = 0;
+		} else if (a == VRA_SLIDE_UP) {
+			slide -= gv[h];		/* analog, as it always was */
+		} else if (a == VRA_SLIDE_DOWN) {
+			slide += gv[h];
+		} else {
+			/* Any other action: a button, with a little hysteresis. */
+			s_grip_on[h] = s_grip_on[h] ? gv[h] > 0.35f : gv[h] > 0.5f;
+			on[h] = s_grip_on[h];
+		}
+		if (a == VRA_SLIDE_UP || a == VRA_SLIDE_DOWN)
+			s_grip_on[h] = 0;
+		held[gb[h]] = on[h];
+		edge[gb[h]] = on[h] && !s_btn_held[gb[h]];
+		s_btn_held[gb[h]] = on[h];
+	}
+	s_roll = blocked ? 0.0f : slide;
 }
 
 /* Results you can feel: taking damage, and dying. */
@@ -1729,6 +1886,17 @@ void vrd_input_frame(void)
 			window_close(w);
 		return;
 	}
+	{
+		/* Home recenters, for flying with mouse and keyboard: in play only,
+		 * since Home moves round the game's own menus. */
+		static int home_held;
+		const int home = keyd_pressed[KEY_HOME] != 0;
+		if (home && !home_held && s_up && vrxr_active() && game_in_front()) {
+			vrxr_log("VR: Home key: recenter");
+			vrd_recenter();
+		}
+		home_held = home;
+	}
 	if (!s_up || !vrxr_active() || !vrxr_read_physical(&p)) {
 		release_game_controls();
 		return;
@@ -1762,6 +1930,10 @@ void vrd_input_frame(void)
 		}
 	}
 	for (b = 0; b < VRB_COUNT; b++) {
+		if (b == VRB_LGRIP || b == VRB_RGRIP) {
+			edge[b] = 0;	/* grips(): they wait out the recenter chord */
+			continue;
+		}
 		edge[b] = held[b] && !s_btn_held[b];
 		s_btn_held[b] = held[b];
 	}
@@ -1796,7 +1968,7 @@ void vrd_input_frame(void)
 		release_game_controls();
 		return;
 	}
-	grips(&p);
+	grips(&p, held, edge);
 	rumble_results();
 	if (game_in_front() || automap_in_front() || s_kb || s_photo)
 		s_ptr_on = 0;
@@ -1870,6 +2042,43 @@ void vrd_input_frame(void)
 	}
 }
 
+/* Head steering: the ship turns toward where the player looks, left and
+ * right and up and down, as the sticks would: nothing inside a few degrees of
+ * the nose, the full turn rate at 35 degrees.  The ship turning brings the
+ * nose round to the gaze, so it settles there.  With Swivel chair the body
+ * already turns the ship, so only the pitch is the head's. */
+#define VRD_HEAD_DEAD	0.10f	/* radians, about 6 degrees */
+#define VRD_HEAD_FULL	0.61f	/* radians, about 35 degrees */
+static float head_rate(float a)
+{
+	const float m = fabsf(a);
+	float v;
+	if (m <= VRD_HEAD_DEAD)
+		return 0.0f;
+	v = (m - VRD_HEAD_DEAD) / (VRD_HEAD_FULL - VRD_HEAD_DEAD);
+	if (v > 1.0f) v = 1.0f;
+	return a < 0.0f ? -v : v;
+}
+
+static void head_steering(void)
+{
+	float q[4], p[3], fx, fy, fz, flat, yaw, pitch;
+	if (!VrSet.head_steer || !game_in_front() || Player_is_dead || Rear_view || !vrxr_head(q, p))
+		return;
+	/* The head's forward (-Z) in tracking space: the recentered nose is -Z. */
+	fx = -2.0f * (q[0] * q[2] + q[1] * q[3]);
+	fy = -2.0f * (q[1] * q[2] - q[0] * q[3]);
+	fz = -(1.0f - 2.0f * (q[0] * q[0] + q[1] * q[1]));
+	flat = sqrtf(fx * fx + fz * fz);
+	pitch = atan2f(fy, flat);	/* up positive */
+	yaw = flat > 0.2f ? atan2f(fx, -fz) : 0.0f;	/* right positive */
+	if (!VrSet.swivel)
+		Controls.heading_time += (fix)(head_rate(yaw) * FrameTime);
+	/* Looking up lifts the nose (the engine's positive pitch dips it), at the
+	 * look stick's rate. */
+	Controls.pitch_time -= (fix)(head_rate(pitch) * FrameTime / 2);
+}
+
 void vrd_add_axes(int speed_factor)
 {
 	fix ft;
@@ -1881,6 +2090,19 @@ void vrd_add_axes(int speed_factor)
 		s_map_reset = 0;
 	}
 	ft = speed_factor * FrameTime;
+	if (VrSet.stick_layout) {
+		/* FPV (a drone's mode 2): the left stick climbs and turns, the right
+		 * stick pitches (forward dips the nose) and banks, the grips thrust. */
+		Controls.vertical_thrust_time += (fix)(dead(s_map.move_y, VRD_STICK_DEAD) * ft);
+		Controls.heading_time += (fix)(dead(s_map.move_x, VRD_STICK_DEAD + 0.25f * fabsf(s_map.move_y)) * FrameTime);
+		Controls.pitch_time += (fix)((VrSet.invert_look ? -1.0f : 1.0f) *
+			dead(s_map.look_y, VRD_STICK_DEAD + 0.25f * fabsf(s_map.look_x)) * FrameTime / 2);
+		Controls.bank_time -= (fix)(dead(s_map.look_x, VRD_STICK_DEAD + 0.25f * fabsf(s_map.look_y)) * ft);
+		Controls.forward_thrust_time += (fix)(dead(s_fpv_thrust, VRD_GRIP_DEAD) * ft);
+		if (!map)
+			head_steering();
+		return;
+	}
 	/* Full stick is the keyboard's full rate; the stock clamp follows. */
 	Controls.forward_thrust_time += (fix)(dead(s_map.move_y, VRD_STICK_DEAD) * ft);
 	Controls.sideways_thrust_time += (fix)(dead(s_map.move_x, VRD_STICK_DEAD) * ft);
@@ -1897,6 +2119,11 @@ void vrd_add_axes(int speed_factor)
 	/* The grips raise and lower the ship: left up, right down, analog.
 	 * s_roll is right minus left and has waited out the recenter chord. */
 	Controls.vertical_thrust_time -= (fix)(dead(s_roll, VRD_GRIP_DEAD) * ft);
+	/* Motion flying: the grabbed controller's height and twist. */
+	Controls.vertical_thrust_time += (fix)(s_mf_vert * ft);
+	Controls.bank_time += (fix)(s_mf_bank * ft);
+	if (!map)
+		head_steering();
 }
 
 /* --- recenter and Switch Game ------------------------------------------------------ */
