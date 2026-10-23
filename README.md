@@ -2,7 +2,7 @@
 
 Descent and Descent 2 in your VR headset, on PC VR or standalone on a Meta Quest 3 or a Steam Frame, built on [DXX-Redux](https://github.com/dxx-redux/dxx-redux), with your own copy of the games. A Game Or Die VR port.
 
-**Watch the install and gameplay video:** [I Put Descent in VR and It's Wild](https://youtu.be/8ny_fpmIa_A)
+**Watch the install and gameplay video:** [I Put Descent in VR and It's Wild](https://youtu.be/JQkiFOKlkl4)
 
 ## Install
 
@@ -18,7 +18,7 @@ Download the newest `-PCVR.zip` from [Releases](../../releases), unzip it anywhe
 
 To uninstall, double-click `Uninstall.bat` (in the download or in either game's VR folder): it removes everything Setup added and keeps your pilots and saves. If something goes wrong, `Collect logs.bat` puts the logs in one zip on your desktop to send us.
 
-<a href="https://youtu.be/8ny_fpmIa_A"><img src="docs/playing-in-vr.png" width="100%" alt="Playing Descent 2 in VR on stream"></a>
+<a href="https://youtu.be/JQkiFOKlkl4"><img src="docs/playing-in-vr.png" width="100%" alt="Playing Descent 2 in VR on stream"></a>
 
 <img src="docs/screenshot-1.png" width="49%" alt="Descent in VR"> <img src="docs/screenshot-2.png" width="49%" alt="Descent 2 in VR, with the missile view open">
 
