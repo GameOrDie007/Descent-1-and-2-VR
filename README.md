@@ -2,7 +2,7 @@
 
 Descent and Descent 2 in your VR headset, on PC VR or standalone on a Meta Quest 3 or a Steam Frame, built on [DXX-Redux](https://github.com/dxx-redux/dxx-redux), with your own copy of the games. A Game Or Die VR port.
 
-**Watch the install and gameplay video:** [I Put Descent in VR and It's Wild](https://youtu.be/JQkiFOKlkl4)
+**Watch the install and gameplay video:** [Descent in VR Just Got WAY Better](https://youtu.be/JQkiFOKlkl4)
 
 ## Install
 
