@@ -13,8 +13,8 @@ android {
         applicationId "net.gameordie.descentvr"
         minSdkVersion 29
         targetSdkVersion 34
-        versionCode 2
-        versionName "1.2"
+        versionCode 3
+        versionName "1.2.1"
     }
     // The release key stays off the repository: GOD_KEYSTORE names a
     // properties file (storeFile, storePassword, keyAlias, keyPassword).

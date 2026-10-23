@@ -416,6 +416,18 @@ void calc_frame_time()
 		FrameTime = timer_value - last_timer_value;
 	}
 
+#ifdef USE_VR
+	/* Paced by the headset, the cap above is skipped, and it was also what kept a
+	 * frame from lasting no time at all: two frames inside one tick of the timer
+	 * gave FrameTime 0, and the game divides by it (Descent 2's Guide-Bot in its
+	 * room).  Wait out the tick: at most a millisecond. */
+	while (vrd_paced() && FrameTime >= 0 && FrameTime < F1_0 / 1000) {
+		timer_update();
+		timer_value = timer_query();
+		FrameTime = timer_value - last_timer_value;
+	}
+#endif
+
 	if ( cheats.turbo )
 		FrameTime *= 2;
 
