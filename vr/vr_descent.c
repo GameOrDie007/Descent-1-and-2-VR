@@ -180,7 +180,7 @@ static void swivel_q(const float in[4], float out[4])
 	out[3] = cw * in[3] - sy * in[1];
 }
 static int s_rumbles;
-/* The game manual: eyes drawn this frame (the book goes into each), and the
+/* The Game Tome: eyes drawn this frame (the book goes into each), and the
  * time of the last book frame. */
 static int s_eyes_drawn;
 static fix64 s_book_last;
@@ -492,7 +492,7 @@ void vrd_frame_begin(void)
 			const char *e = getenv("GOD_VR_BOOK_TEST");
 			s_book_test = e ? atoi(e) : 0;
 			if (s_book_test > 0) {
-				vrxr_log("VR: book test: opening the game manual for %d s (%s)", s_book_test,
+				vrxr_log("VR: book test: opening the Game Tome for %d s (%s)", s_book_test,
 					vrd_book_open() ? "opened" : "NO BOOK");
 				s_book_test_end = timer_query() + i2f(s_book_test);
 			}
@@ -503,7 +503,7 @@ void vrd_frame_begin(void)
 		vrxr_set_mirror_steady(VrSet.desktop_view == 1);
 		read_controller_aim();
 		/* The monitor shows the left eye in flight, the panel otherwise; with
-		 * the game manual open, the eye that holds it. */
+		 * the Game Tome open, the eye that holds it. */
 		vrxr_set_mirror(s_kind == VRD_EYES || vrxr_book_is_open() ? 0 : VRXR_MIRROR_PANEL,
 			grd_curscreen->sc_w, grd_curscreen->sc_h);
 		s_eyes_drawn = 0;
@@ -666,7 +666,7 @@ void vrd_eye_end(int eye)
 	if (s_eye != eye)
 		return;
 	if (vrxr_book_is_open())
-		vrxr_book_draw(&s_cur);	/* the game manual, over the paused game */
+		vrxr_book_draw(&s_cur);	/* the Game Tome, over the paused game */
 	vrxr_eye_end(eye);
 	screen_pop();
 	s_eye = -1;
@@ -733,7 +733,7 @@ int vrd_panel_begin(int what)
 	if (s_kind == VRD_FLAT || s_eye >= 0 || s_panel >= 0)
 		return 0;
 	if (vrxr_book_is_open())
-		return 0;	/* the game manual is open: no menu over it */
+		return 0;	/* the Game Tome is open: no menu over it */
 	if (what == VRD_PANEL_HUD && !game_visible())
 		return 0;	/* no game, no HUD */
 	if (what == VRD_PANEL_MENU && s_photo && game_visible())
@@ -1945,7 +1945,7 @@ void vrd_input_frame(void)
 	s_menu_held = p.menu;
 
 	if (vrxr_book_is_open()) {
-		/* The game manual: the hands turn its pages; B, Y or Menu close it,
+		/* The Game Tome: the hands turn its pages; B, Y or Menu close it,
 		 * back to the menu it was opened from. */
 		const fix64 now = timer_query();
 		const float dt = s_book_last ? f2fl(now - s_book_last) : 1.0f / 90.0f;
@@ -1954,7 +1954,7 @@ void vrd_input_frame(void)
 		s_ptr_on = 0;
 		s_nav_dir = 0;
 		if (!vrxr_book_frame(&p, dt))
-			vrxr_log("VR: the game manual closed");
+			vrxr_log("VR: the Game Tome closed");
 		return;
 	}
 	s_book_last = 0;

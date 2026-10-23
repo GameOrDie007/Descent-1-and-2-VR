@@ -172,7 +172,7 @@ typedef struct vrd_settings {
 	int classic_size;		/* the Classic cockpit's size, 0..6: 70% to 130% of the view */
 	int classic_height;		/* the Classic cockpit's height, 0..8: 4 the default, 1.5 degrees a step */
 	int third_person;		/* 0 the cockpit, 1 behind the ship (near), 2 behind it (far) */
-	int book_float;			/* the game manual floats in front instead of in the off hand */
+	int book_float;			/* the Game Tome floats in front instead of in the off hand */
 	int stick_layout;		/* 0 standard; 1 FPV (drone, mode 2): left stick up/down and turn, right stick pitch and bank, grips forward and back */
 	int aim_head;			/* with aim_controller: aim where you look instead of with the hand */
 	int head_steer;			/* the ship turns toward where you look (yaw and pitch) */
@@ -229,7 +229,7 @@ int vrd_family_button(int family, int row);	/* the VRB_* on that row */
 
 /* VR Options: the pause menu's row and Options' first row open it. */
 void vrd_options_menu(void);
-/* The game manual (VR Options, Game Manual): a book in the off hand, opened
+/* The Game Tome (VR Options, Game Tome): a book in the off hand, opened
  * over the menu.  0 = Setup has not made one.  While it shows, the menu
  * panel and the menu's own drawing stand aside. */
 int vrd_book_available(void);

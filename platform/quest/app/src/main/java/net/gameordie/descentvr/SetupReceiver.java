@@ -1,5 +1,5 @@
 // Descent 1 & 2 VR on Quest and Steam Frame (standalone): a helper for the PC's
-// Setup.  Setup copies the Game Manual's book to the headset over adb, and a
+// Setup.  Setup copies the Game Tome's book to the headset over adb, and a
 // folder adb makes is adb's: the game may read it but not write the player's
 // notes and the ribbon's place into it.  So Setup asks the app, with an
 // explicit broadcast, to make the book's folders itself, and copies the book
@@ -57,7 +57,7 @@ public class SetupReceiver extends BroadcastReceiver {
                 Log.w("DescentVR", "Setup: cannot write in " + probe.getParent() + ": " + e);
             }
         }
-        Log.i("DescentVR", "Setup: the Game Manual's folders: " + made + " of 6 made, " + writable + " of 2 writable");
+        Log.i("DescentVR", "Setup: the Game Tome's folders: " + made + " of 6 made, " + writable + " of 2 writable");
         setResultCode(made == 6 && writable == 2 ? 1 : 0);
         setResultData(made + " made, " + writable + " writable");
     }

@@ -77,7 +77,7 @@
                 <category android:name="org.khronos.openxr.intent.category.IMMERSIVE_HMD" />
             </intent-filter>
         </activity>
-        <!-- The PC's Setup asks the app to make the Game Manual's folders (SetupReceiver). -->
+        <!-- The PC's Setup asks the app to make the Game Tome's folders (SetupReceiver). -->
         <receiver android:name="net.gameordie.descentvr.SetupReceiver"
             android:exported="true" />
     </application>

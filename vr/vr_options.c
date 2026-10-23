@@ -206,7 +206,7 @@ void vrd_settings_defaults(void)
 	VrSet.classic_size = 3;		/* 100%: the picture fills the view */
 	VrSet.classic_height = 4;
 	VrSet.third_person = 0;
-	VrSet.book_float = 0;		/* the game manual in the off hand, like a book */
+	VrSet.book_float = 0;		/* the Game Tome in the off hand, like a book */
 	VrSet.head_steer = 0;		/* options; the sticks fly by default */
 	VrSet.stick_layout = 0;		/* the sticks as shipped; FPV is a choice */
 	VrSet.motion_fly = 0;
@@ -415,7 +415,7 @@ static void hand_page(void)
 	m[13].min_value = 0; m[13].max_value = 6;
 	m[14].type = NM_TYPE_SLIDER; m[14].text = "Classic cockpit height"; m[14].value = VrSet.classic_height;
 	m[14].min_value = 0; m[14].max_value = 8;
-	m[15].type = NM_TYPE_CHECK; m[15].text = "Float the game manual"; m[15].value = VrSet.book_float;
+	m[15].type = NM_TYPE_CHECK; m[15].text = "Float the Game Tome"; m[15].value = VrSet.book_float;
 	newmenu_do("Hands and Aim", NULL, 16, m, hand_page_cb, NULL);
 	hand_page_read();
 }
@@ -711,7 +711,7 @@ void vrd_play_style_once(void)
 		vrd_play_style_menu();
 }
 
-/* The first page: Recenter, the game manual, Play style, the topic pages,
+/* The first page: Recenter, the Game Tome, Play style, the topic pages,
  * Switch Game. */
 #define FP_RECENTER	0
 #define FP_MANUAL	1
@@ -761,8 +761,8 @@ static int first_page_cb(newmenu *menu, d_event *event, void *userdata)
 		if (!vrd_book_open()) {
 			/* No book yet: say so on the row itself (a message box is laid out
 			 * for the monitor and runs off the panel). */
-			snprintf(s_manual_text, sizeof(s_manual_text), "Game Manual: run Setup again");
-			vrxr_log("VR: Game Manual chosen, but there is no tome\\tome.txt beside the game");
+			snprintf(s_manual_text, sizeof(s_manual_text), "Game Tome: run Setup again");
+			vrxr_log("VR: Game Tome chosen, but there is no tome\\tome.txt beside the game");
 		}
 		return 1;
 	case FP_VIEW:
@@ -792,7 +792,7 @@ void vrd_options_menu(void)
 	snprintf(s_switch_text, sizeof(s_switch_text), "Switch to %s", vrd_other_game_name());
 	memset(s_first_items, 0, sizeof(s_first_items));
 	m[0].type = NM_TYPE_MENU; m[0].text = "Recenter";
-	snprintf(s_manual_text, sizeof(s_manual_text), "Game Manual");
+	snprintf(s_manual_text, sizeof(s_manual_text), "Game Tome");
 	m[1].type = NM_TYPE_MENU; m[1].text = s_manual_text;
 	snprintf(s_view_text, sizeof(s_view_text), "View: %s", view_name());
 	m[2].type = NM_TYPE_MENU; m[2].text = s_view_text;
